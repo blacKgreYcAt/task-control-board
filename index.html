@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>任務中控台</title>
+<style>
+  :root {
+    --bg: #F2F2F5;
+    --surface: #FFFFFF;
+    --surface-2: #F7F7F9;
+    --border: #E2E2E6;
+    --text: #1D1D1F;
+    --text-secondary: #6E6E73;
+    --text-tertiary: #98989D;
+    --accent: #5E5CE6;
+    --accent-soft: #EDEDFC;
+    --accent-contrast: #FFFFFF;
+    --status-pending: #8E8E93;
+    --status-pending-bg: #F2F2F3;
+    --status-progress: #0A84FF;
+    --status-progress-bg: #E8F2FF;
+    --status-waiting: #FF9F0A;
+    --status-waiting-bg: #FFF3E0;
+    --status-done: #2FA84B;
+    --status-done-bg: #E7F8EC;
+    --danger: #FF3B30;
+    --danger-bg: #FFEBEA;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 12px 32px rgba(0,0,0,0.14);
+    --radius-lg: 18px;
+    --radius-md: 13px;
+    --radius-sm: 9px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Microsoft JhengHei", "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #19191B; --surface: #29292B; --surface-2: #232325; --border: #3A3A3C;
+      --text: #F5F5F7; --text-secondary: #AEAEB2; --text-tertiary: #8E8E93;
+      --accent: #7D7AFF; --accent-soft: #2C2A54; --accent-contrast: #FFFFFF;
+      --status-pending: #9A9A9E; --status-pending-bg: #38383A;
+      --status-progress: #409CFF; --status-progress-bg: #123054;
+      --status-waiting: #FFB340; --status-waiting-bg: #452F0E;
+      --status-done: #45C468; --status-done-bg: #143820;
+      --danger: #FF453A; --danger-bg: #3E1613;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.4); --shadow-md: 0 12px 32px rgba(0,0,0,0.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #19191B; --surface: #29292B; --surface-2: #232325; --border: #3A3A3C;
+    --text: #F5F5F7; --text-secondary: #AEAEB2; --text-tertiary: #8E8E93;
+    --accent: #7D7AFF; --accent-soft: #2C2A54; --accent-contrast: #FFFFFF;
+    --status-pending: #9A9A9E; --status-pending-bg: #38383A;
+    --status-progress: #409CFF; --status-progress-bg: #123054;
+    --status-waiting: #FFB340; --status-waiting-bg: #452F0E;
+    --status-done: #45C468; --status-done-bg: #143820;
+    --danger: #FF453A; --danger-bg: #3E1613;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.4); --shadow-md: 0 12px 32px rgba(0,0,0,0.55);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); margin: 0; }
+  body {
+    font-family: var(--font-ui);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 720px; margin: 0 auto; padding: 0 16px 96px; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    padding: 14px 0 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; max-width: 720px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 17px; cursor: pointer;
+    transition: transform .12s ease, background .12s ease;
+  }
+  .icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
+  .icon-btn:active { transform: scale(0.92); }
+  .primary-btn {
+    background: var(--accent); color: var(--accent-contrast);
+    border: none; border-radius: var(--radius-sm);
+    padding: 10px 16px; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: var(--font-ui);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  .primary-btn:hover { opacity: 0.88; }
+  .primary-btn:active { transform: scale(0.97); }
+  .secondary-btn {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer;
+    font-family: var(--font-ui);
+  }
+  .text-btn { background: none; border: none; color: var(--accent); font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font-ui); padding: 6px 0; }
+  .danger-text-btn { background: none; border: none; color: var(--danger); font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font-ui); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+  .stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 10px; text-align: center; box-shadow: var(--shadow-sm); }
+  .stat-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; }
+  .stat-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+  .stat-tile.warn .stat-num { color: var(--danger); }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 14px; }
+  .switch { position: relative; width: 46px; height: 27px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: var(--border); border-radius: 27px; cursor: pointer; transition: background .15s ease; }
+  .switch .slider::before { content: ""; position: absolute; width: 23px; height: 23px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .15s ease; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .switch input:checked + .slider { background: var(--status-done); }
+  .switch input:checked + .slider::before { transform: translateX(19px); }
+  .toggle-label { font-size: 15px; font-weight: 500; }
+
+  .segmented { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px; overflow-x: auto; gap: 2px; }
+  .segmented button {
+    flex: 1; white-space: nowrap; border: none; background: transparent; color: var(--text-secondary);
+    font-family: var(--font-ui); font-size: 14.5px; font-weight: 600; padding: 8px 10px; border-radius: 7px; cursor: pointer;
+  }
+  .segmented button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 4px; }
+  .chip {
+    flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-secondary); font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .chip.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+
+  .task-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  .task-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 14px 16px; box-shadow: var(--shadow-sm); cursor: pointer;
+    display: flex; flex-direction: column; gap: 8px;
+    transition: transform .1s ease, box-shadow .1s ease;
+  }
+  .task-card:hover { box-shadow: var(--shadow-md); }
+  .task-card:active { transform: scale(0.995); }
+  .task-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .task-title { font-size: 17px; font-weight: 650; letter-spacing: -0.005em; flex: 1; }
+  .status-pill { flex: 0 0 auto; font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 14px; color: var(--text-secondary); }
+  .meta-tag { background: var(--surface-2); padding: 3px 9px; border-radius: 7px; font-weight: 600; font-size: 13px; }
+  .due-badge { font-family: var(--font-mono); font-weight: 600; font-size: 13px; }
+  .due-badge.overdue { color: var(--danger); }
+  .due-badge.soon { color: var(--status-waiting); }
+  .avatars { display: flex; align-items: center; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--surface); margin-left: -8px;
+  }
+  .avatar:first-child { margin-left: 0; }
+
+  .empty-state { text-align: center; padding: 64px 20px; color: var(--text-secondary); }
+  .empty-state .glyph { font-size: 40px; margin-bottom: 10px; }
+
+  .fab {
+    position: fixed; right: 20px; bottom: 24px; width: 58px; height: 58px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-contrast); border: none; font-size: 26px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25); cursor: pointer; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fab:active { transform: scale(0.94); }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.32); backdrop-filter: blur(4px);
+    display: flex; align-items: flex-end; justify-content: center; z-index: 100;
+  }
+  .modal-sheet {
+    background: var(--surface); width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
+    border-radius: 20px 20px 0 0; box-shadow: var(--shadow-md); padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 640px) {
+    .modal-backdrop { align-items: center; }
+    .modal-sheet { border-radius: 20px; margin-bottom: 5vh; }
+  }
+  .sheet-handle { width: 36px; height: 5px; background: var(--border); border-radius: 3px; margin: 0 auto 14px; }
+  .sheet-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
+  .sheet-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+
+  label.field-label { display: block; font-size: 13.5px; font-weight: 700; color: var(--text-secondary); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+  input[type=text], input[type=date], textarea, select {
+    width: 100%; font-family: var(--font-ui); font-size: 16px; padding: 11px 12px;
+    border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea { resize: vertical; min-height: 70px; font-family: var(--font-ui); }
+
+  .status-select-wrap { margin: 4px 0 6px; }
+  .status-select {
+    width: 100%; font-weight: 700; font-size: 15px; padding: 10px 12px; border-radius: 999px;
+    border: 1.5px solid var(--border); appearance: none; -webkit-appearance: none; text-align: center;
+    background-position: right 14px center; cursor: pointer;
+  }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .info-item { background: var(--surface-2); border-radius: var(--radius-md); padding: 10px 12px; }
+  .info-item .k { font-size: 12px; color: var(--text-tertiary); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .info-item .v { font-size: 15.5px; font-weight: 600; margin-top: 3px; word-break: break-word; }
+  .collab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .collab-chip { background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+
+  .divider { height: 1px; background: var(--border); margin: 16px 0; border: none; }
+
+  .log-list { display: flex; flex-direction: column; gap: 12px; margin: 10px 0; }
+  .log-entry { display: flex; gap: 10px; }
+  .log-body { flex: 1; background: var(--surface-2); border-radius: var(--radius-md); padding: 10px 12px; }
+  .log-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .log-author { font-weight: 700; font-size: 14.5px; }
+  .log-time { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+  .log-text { font-size: 15px; margin-top: 4px; white-space: pre-wrap; }
+  .log-status-tag { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+
+  .compose-row { display: flex; gap: 8px; align-items: flex-end; position: sticky; bottom: -20px; background: var(--surface); padding-top: 10px; }
+  .compose-row textarea { min-height: 44px; }
+
+  .onboarding { max-width: 480px; margin: 12vh auto; padding: 0 20px; text-align: center; }
+  .onboarding .glyph { font-size: 46px; margin-bottom: 14px; }
+  .onboarding h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .onboarding p { color: var(--text-secondary); font-size: 15px; margin-bottom: 20px; line-height: 1.6; }
+  .onboarding input { margin-bottom: 12px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px;
+    font-size: 14.5px; font-weight: 600; box-shadow: var(--shadow-md); z-index: 200; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+  [hidden] { display: none !important; }
+  ::selection { background: var(--accent-soft); }
+</style>
+</head>
+<body>
+
+<div id="onboarding" class="onboarding" hidden>
+  <div class="glyph">🔗</div>
+  <h1>連接資料來源</h1>
+  <p>請貼上部署 Google Apps Script 後拿到的網址（結尾是 <code>/exec</code>），資料會存在你自己的 Google 試算表裡，所有裝置共用同一份。</p>
+  <input type="text" id="onboardingUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+  <button class="primary-btn" style="width:100%; justify-content:center;" onclick="saveApiUrl()">連接</button>
+</div>
+
+<div id="mainApp" hidden>
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span style="font-size:22px;">📋</span>
+        <span class="brand-title">任務中控台</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="icon-btn" onclick="openSettings()" title="設定">⚙︎</button>
+        <button class="icon-btn" onclick="refreshTasks(true)" title="重新整理">⟳</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="stat-row" id="statRow"></div>
+
+    <div class="toggle-row">
+      <span class="toggle-label">只看指派給我的</span>
+      <label class="switch">
+        <input type="checkbox" id="onlyMineToggle" onchange="renderTasks()">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="segmented" id="statusFilter"></div>
+    <div class="chip-row" id="deptFilter"></div>
+
+    <div class="task-list" id="taskList"></div>
+  </div>
+
+  <button class="fab" onclick="openNewTask()" title="新增任務">＋</button>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+  var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxguQ0ErK1emNTAgjxN6RJwfWqbjd4E5FW6ZCcqvIUFI_afnb7IQNJbKfrue-KXrFJBGg/exec';
+
+  var STATUS_ORDER = ['待處理', '進行中', '等待協辦', '已完成'];
+  var STATUS_META = {
+    '待處理':  { fg: 'var(--status-pending)',  bg: 'var(--status-pending-bg)' },
+    '進行中':  { fg: 'var(--status-progress)', bg: 'var(--status-progress-bg)' },
+    '等待協辦': { fg: 'var(--status-waiting)',  bg: 'var(--status-waiting-bg)' },
+    '已完成':  { fg: 'var(--status-done)',     bg: 'var(--status-done-bg)' }
+  };
+
+  var state = {
+    apiUrl: '',
+    userName: '',
+    tasks: [],
+    statusFilter: '全部',
+    deptFilter: '全部',
+    loading: false,
+    pollTimer: null
+  };
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function safeGetItem(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2400);
+  }
+
+  // ---------- API ----------
+  function apiGet(action, params) {
+    var url = state.apiUrl + '?action=' + encodeURIComponent(action);
+    for (var k in (params || {})) url += '&' + k + '=' + encodeURIComponent(params[k]);
+    return fetch(url).then(function (r) { return r.json(); });
+  }
+  function apiPost(payload) {
+    return fetch(state.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); });
+  }
+
+  // ---------- Boot ----------
+  function boot() {
+    state.apiUrl = safeGetItem('ttc_api_url') || DEFAULT_API_URL;
+    state.userName = safeGetItem('ttc_user_name') || '';
+    if (!state.apiUrl) {
+      document.getElementById('onboarding').hidden = false;
+      return;
+    }
+    if (!safeGetItem('ttc_api_url')) safeSetItem('ttc_api_url', state.apiUrl);
+    document.getElementById('mainApp').hidden = false;
+    ensureUserName();
+    buildStatusFilter();
+    refreshTasks();
+    state.pollTimer = setInterval(function () { refreshTasks(false); }, 20000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) refreshTasks(false);
+    });
+  }
+
+  function saveApiUrl() {
+    var v = document.getElementById('onboardingUrlInput').value.trim();
+    if (!v) return showToast('請輸入網址');
+    safeSetItem('ttc_api_url', v);
+    location.reload();
+  }
+
+  function ensureUserName() {
+    if (state.userName) return;
+    var name = prompt('第一次使用，請輸入你的稱呼（之後更新進度時會顯示）：');
+    if (name && name.trim()) {
+      state.userName = name.trim();
+      safeSetItem('ttc_user_name', state.userName);
+    }
+  }
+
+  // ---------- Rendering: filters ----------
+  function buildStatusFilter() {
+    var wrap = document.getElementById('statusFilter');
+    var opts = ['全部'].concat(STATUS_ORDER);
+    wrap.innerHTML = opts.map(function (s) {
+      return '<button class="' + (state.statusFilter === s ? 'active' : '') + '" onclick="setStatusFilter(\'' + s + '\')">' + s + '</button>';
+    }).join('');
+  }
+  function setStatusFilter(s) { state.statusFilter = s; buildStatusFilter(); renderTasks(); }
+
+  function buildDeptFilter() {
+    var wrap = document.getElementById('deptFilter');
+    var depts = Array.from(new Set(state.tasks.map(function (t) { return t.department; }).filter(Boolean)));
+    var opts = ['全部'].concat(depts);
+    wrap.innerHTML = opts.map(function (d) {
+      return '<button class="chip ' + (state.deptFilter === d ? 'active' : '') + '" onclick="setDeptFilter(\'' + escapeHtml(d).replace(/'/g, "\\'") + '\')">' + escapeHtml(d) + '</button>';
+    }).join('');
+  }
+  function setDeptFilter(d) { state.deptFilter = d; buildDeptFilter(); renderTasks(); }
+
+  // ---------- Due date helpers ----------
+  function dueInfo(dueDate) {
+    if (!dueDate) return { label: '無截止日', cls: '' };
+    var today = new Date(); today.setHours(0,0,0,0);
+    var due = new Date(dueDate + 'T00:00:00');
+    var diffDays = Math.round((due - today) / 86400000);
+    if (diffDays < 0) return { label: '已逾期 ' + Math.abs(diffDays) + ' 天', cls: 'overdue' };
+    if (diffDays === 0) return { label: '今天到期', cls: 'soon' };
+    if (diffDays <= 3) return { label: '剩 ' + diffDays + ' 天', cls: 'soon' };
+    return { label: dueDate, cls: '' };
+  }
+
+  function initials(name) {
+    if (!name) return '?';
+    var t = String(name).trim();
+    return t.slice(0, 1).toUpperCase();
+  }
+
+  // ---------- Data load ----------
+  function refreshTasks(showLoading) {
+    if (!state.apiUrl) return;
+    if (showLoading) showToast('重新整理中…');
+    apiGet('list').then(function (res) {
+      if (!res.ok) { showToast('讀取失敗：' + res.error); return; }
+      state.tasks = res.tasks || [];
+      buildDeptFilter();
+      renderStats();
+      renderTasks();
+    }).catch(function () { showToast('連線失敗，請檢查網路'); });
+  }
+
+  function renderStats() {
+    var total = state.tasks.length;
+    var inProgress = state.tasks.filter(function (t) { return t.status === '進行中'; }).length;
+    var overdue = state.tasks.filter(function (t) { return dueInfo(t.dueDate).cls === 'overdue' && t.status !== '已完成'; }).length;
+    var soon = state.tasks.filter(function (t) { return dueInfo(t.dueDate).cls === 'soon' && t.status !== '已完成'; }).length;
+    var tiles = [
+      { n: total, l: '總任務' },
+      { n: inProgress, l: '進行中' },
+      { n: soon, l: '即將到期' },
+      { n: overdue, l: '已逾期', warn: true }
+    ];
+    document.getElementById('statRow').innerHTML = tiles.map(function (t) {
+      return '<div class="stat-tile ' + (t.warn ? 'warn' : '') + '"><div class="stat-num">' + t.n + '</div><div class="stat-label">' + t.l + '</div></div>';
+    }).join('');
+  }
+
+  function renderTasks() {
+    var onlyMine = document.getElementById('onlyMineToggle').checked;
+    var list = state.tasks.filter(function (t) {
+      if (state.statusFilter !== '全部' && t.status !== state.statusFilter) return false;
+      if (state.deptFilter !== '全部' && t.department !== state.deptFilter) return false;
+      if (onlyMine) {
+        var mine = t.assignee === state.userName || (t.collaborators || []).indexOf(state.userName) !== -1;
+        if (!mine) return false;
+      }
+      return true;
+    });
+    list.sort(function (a, b) {
+      var da = a.dueDate || '9999-99-99', db_ = b.dueDate || '9999-99-99';
+      return da < db_ ? -1 : da > db_ ? 1 : 0;
+    });
+
+    var listEl = document.getElementById('taskList');
+    if (list.length === 0) {
+      listEl.innerHTML = '<div class="empty-state"><div class="glyph">🗂️</div>沒有符合條件的任務</div>';
+      return;
+    }
+    listEl.innerHTML = list.map(function (t) {
+      var meta = STATUS_META[t.status] || STATUS_META['待處理'];
+      var di = dueInfo(t.dueDate);
+      var collabs = (t.collaborators || []);
+      var avatars = [t.assignee].concat(collabs).filter(Boolean).slice(0, 4);
+      return '' +
+        '<div class="task-card" onclick="openTaskDetail(\'' + t.id + '\')">' +
+          '<div class="task-top">' +
+            '<div class="task-title">' + escapeHtml(t.title) + '</div>' +
+            '<span class="status-pill" style="color:' + meta.fg + '; background:' + meta.bg + ';">' + escapeHtml(t.status) + '</span>' +
+          '</div>' +
+          '<div class="task-meta">' +
+            (t.department ? '<span class="meta-tag">' + escapeHtml(t.department) + '</span>' : '') +
+            (t.brand ? '<span class="meta-tag">' + escapeHtml(t.brand) + '</span>' : '') +
+            '<span>👤 ' + escapeHtml(t.assignee || '未指派') + '</span>' +
+            '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
+          '</div>' +
+          (avatars.length ? '<div class="avatars">' + avatars.map(function (a) { return '<span class="avatar" title="' + escapeHtml(a) + '">' + initials(a) + '</span>'; }).join('') + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  // ---------- Modals ----------
+  function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+
+  function openSettings() {
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header"><div class="sheet-title">設定</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
+          '<label class="field-label">你的稱呼</label>' +
+          '<input type="text" id="settingsName" value="' + escapeHtml(state.userName) + '">' +
+          '<label class="field-label">資料來源網址</label>' +
+          '<input type="text" id="settingsUrl" value="' + escapeHtml(state.apiUrl) + '">' +
+          '<div style="margin-top:18px; display:flex; gap:10px;">' +
+            '<button class="primary-btn" style="flex:1; justify-content:center;" onclick="saveSettings()">儲存</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
+  }
+  function saveSettings() {
+    var name = document.getElementById('settingsName').value.trim();
+    var url = document.getElementById('settingsUrl').value.trim();
+    if (name) { state.userName = name; safeSetItem('ttc_user_name', name); }
+    if (url && url !== state.apiUrl) { safeSetItem('ttc_api_url', url); location.reload(); return; }
+    closeModal();
+    showToast('已儲存');
+  }
+
+  function openNewTask() {
+    var depts = Array.from(new Set(state.tasks.map(function (t) { return t.department; }).filter(Boolean)));
+    var brands = Array.from(new Set(state.tasks.map(function (t) { return t.brand; }).filter(Boolean)));
+    var assignees = Array.from(new Set(state.tasks.map(function (t) { return t.assignee; }).filter(Boolean)));
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header"><div class="sheet-title">新增任務</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
+          '<label class="field-label">任務標題</label>' +
+          '<input type="text" id="ntTitle" placeholder="例如：9 月新品 IG 貼文素材">' +
+          '<label class="field-label">部門</label>' +
+          '<input type="text" id="ntDept" list="deptList" placeholder="例如：行銷 / 直營門市 / 電商">' +
+          '<datalist id="deptList">' + depts.map(function (d) { return '<option value="' + escapeHtml(d) + '">'; }).join('') + '</datalist>' +
+          '<label class="field-label">品牌／系列</label>' +
+          '<input type="text" id="ntBrand" list="brandList" placeholder="選填">' +
+          '<datalist id="brandList">' + brands.map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join('') + '</datalist>' +
+          '<label class="field-label">負責人</label>' +
+          '<input type="text" id="ntAssignee" list="assigneeList" placeholder="這項任務由誰負責">' +
+          '<datalist id="assigneeList">' + assignees.map(function (a) { return '<option value="' + escapeHtml(a) + '">'; }).join('') + '</datalist>' +
+          '<label class="field-label">協辦人員</label>' +
+          '<input type="text" id="ntCollab" placeholder="以逗號分隔，例如：小美, 小華">' +
+          '<label class="field-label">截止日期</label>' +
+          '<input type="date" id="ntDue">' +
+          '<label class="field-label">說明（選填）</label>' +
+          '<textarea id="ntNotes" placeholder="工作內容細節、注意事項…"></textarea>' +
+          '<div style="margin-top:18px;"><button class="primary-btn" style="width:100%; justify-content:center;" onclick="submitNewTask()">建立任務</button></div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
+  }
+
+  function submitNewTask() {
+    var title = document.getElementById('ntTitle').value.trim();
+    if (!title) return showToast('請輸入任務標題');
+    var payload = {
+      action: 'createTask',
+      title: title,
+      department: document.getElementById('ntDept').value.trim(),
+      brand: document.getElementById('ntBrand').value.trim(),
+      assignee: document.getElementById('ntAssignee').value.trim(),
+      collaborators: document.getElementById('ntCollab').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+      dueDate: document.getElementById('ntDue').value,
+      notes: document.getElementById('ntNotes').value.trim(),
+      status: '待處理',
+      createdBy: state.userName
+    };
+    apiPost(payload).then(function (res) {
+      if (!res.ok) return showToast('建立失敗：' + res.error);
+      closeModal();
+      showToast('已建立任務');
+      refreshTasks();
+    });
+  }
+
+  function openTaskDetail(id) {
+    var t = state.tasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    renderDetailModal(t, []);
+    apiGet('updates', { taskId: id }).then(function (res) {
+      if (res.ok) renderDetailModal(t, res.updates || []);
+    });
+  }
+
+  function renderDetailModal(t, updates) {
+    var meta = STATUS_META[t.status] || STATUS_META['待處理'];
+    var di = dueInfo(t.dueDate);
+    var collabs = (t.collaborators || []);
+    var statusOptions = STATUS_ORDER.map(function (s) {
+      return '<option value="' + s + '"' + (s === t.status ? ' selected' : '') + '>' + s + '</option>';
+    }).join('');
+
+    var logHtml = updates.slice().reverse().map(function (u) {
+      return '' +
+        '<div class="log-entry">' +
+          '<span class="avatar" style="margin-left:0;">' + initials(u.author) + '</span>' +
+          '<div class="log-body">' +
+            '<div class="log-head"><span class="log-author">' + escapeHtml(u.author || '匿名') + '</span><span class="log-time">' + escapeHtml((u.createdAt || '').replace('T', ' ')) + '</span></div>' +
+            (u.text ? '<div class="log-text">' + escapeHtml(u.text) + '</div>' : '') +
+            (u.statusSnapshot ? '<span class="log-status-tag" style="color:' + (STATUS_META[u.statusSnapshot] || STATUS_META['待處理']).fg + '; background:' + (STATUS_META[u.statusSnapshot] || STATUS_META['待處理']).bg + ';">狀態 → ' + escapeHtml(u.statusSnapshot) + '</span>' : '') +
+          '</div>' +
+        '</div>';
+    }).join('') || '<div style="color:var(--text-tertiary); font-size:14px; text-align:center; padding:12px 0;">還沒有進度紀錄</div>';
+
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header">' +
+            '<div class="sheet-title">' + escapeHtml(t.title) + '</div>' +
+            '<button class="icon-btn" onclick="closeModal()">✕</button>' +
+          '</div>' +
+
+          '<div class="status-select-wrap">' +
+            '<select class="status-select" id="detailStatus" style="color:' + meta.fg + '; background:' + meta.bg + '; border-color:' + meta.fg + ';" onchange="changeStatus(\'' + t.id + '\')">' + statusOptions + '</select>' +
+          '</div>' +
+
+          '<div class="info-grid">' +
+            '<div class="info-item"><div class="k">部門</div><div class="v">' + escapeHtml(t.department || '—') + '</div></div>' +
+            '<div class="info-item"><div class="k">品牌／系列</div><div class="v">' + escapeHtml(t.brand || '—') + '</div></div>' +
+            '<div class="info-item"><div class="k">負責人</div><div class="v">' + escapeHtml(t.assignee || '未指派') + '</div></div>' +
+            '<div class="info-item"><div class="k">截止日期</div><div class="v ' + (di.cls === 'overdue' ? 'due-badge overdue' : '') + '">' + escapeHtml(t.dueDate || '未設定') + (di.cls ? '（' + di.label + '）' : '') + '</div></div>' +
+          '</div>' +
+          (collabs.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協辦人員</div><div class="collab-chips">' + collabs.map(function (c) { return '<span class="collab-chip">' + escapeHtml(c) + '</span>'; }).join('') + '</div></div>' : '') +
+          (t.notes ? '<div class="info-item" style="margin-bottom:14px;"><div class="k">說明</div><div class="v" style="font-weight:500;">' + escapeHtml(t.notes) + '</div></div>' : '') +
+
+          '<hr class="divider">' +
+          '<label class="field-label" style="margin-top:0;">進度紀錄</label>' +
+          '<div class="log-list">' + logHtml + '</div>' +
+
+          '<div class="compose-row">' +
+            '<textarea id="composeText" placeholder="新增進度說明…"></textarea>' +
+            '<button class="primary-btn" onclick="submitUpdate(\'' + t.id + '\')">送出</button>' +
+          '</div>' +
+
+          '<div style="text-align:center; margin-top:18px;"><button class="danger-text-btn" onclick="removeTask(\'' + t.id + '\')">刪除此任務</button></div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
+  }
+
+  function changeStatus(id) {
+    var newStatus = document.getElementById('detailStatus').value;
+    apiPost({ action: 'addUpdate', taskId: id, author: state.userName || '未署名', text: '', newStatus: newStatus }).then(function (res) {
+      if (!res.ok) return showToast('更新失敗：' + res.error);
+      showToast('狀態已更新為「' + newStatus + '」');
+      refreshTasks();
+      openTaskDetail(id);
+    });
+  }
+
+  function submitUpdate(id) {
+    var text = document.getElementById('composeText').value.trim();
+    if (!text) return showToast('請輸入進度內容');
+    apiPost({ action: 'addUpdate', taskId: id, author: state.userName || '未署名', text: text }).then(function (res) {
+      if (!res.ok) return showToast('送出失敗：' + res.error);
+      showToast('已新增進度');
+      refreshTasks();
+      openTaskDetail(id);
+    });
+  }
+
+  function removeTask(id) {
+    if (!confirm('確定要刪除這個任務嗎？此動作無法復原。')) return;
+    apiPost({ action: 'deleteTask', id: id }).then(function (res) {
+      if (!res.ok) return showToast('刪除失敗：' + res.error);
+      closeModal();
+      showToast('已刪除任務');
+      refreshTasks();
+    });
+  }
+
+  boot();
+</script>
+</body>
+</html>
