@@ -209,6 +209,8 @@
   .kanban-card-title { font-size: 14px; font-weight: 650; margin-bottom: 6px; }
   .kanban-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); }
   .kanban-advance-btn { background: var(--accent-soft); color: var(--accent); border: none; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .kanban-btn-group { display: flex; gap: 5px; align-items: center; }
+  .kanban-back-btn { background: var(--surface-2); color: var(--text-secondary); }
 
   #searchInput { font-size: 15px; }
 
@@ -859,8 +861,9 @@
     board.innerHTML = STATUS_ORDER.map(function (status) {
       var col = tasks.filter(function (t) { return t.status === status; }).sort(taskUrgencySort_);
       var meta = STATUS_META[status];
-      var nextIndex = STATUS_ORDER.indexOf(status) + 1;
-      var nextStatus = STATUS_ORDER[nextIndex];
+      var statusIndex = STATUS_ORDER.indexOf(status);
+      var nextStatus = STATUS_ORDER[statusIndex + 1];
+      var prevStatus = STATUS_ORDER[statusIndex - 1];
       var cards = col.map(function (t) {
         var di = dueInfo(t.dueDate);
         return '' +
@@ -868,7 +871,10 @@
             '<div class="kanban-card-title">' + escapeHtml(t.title) + '</div>' +
             '<div class="kanban-card-meta">' +
               '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
-              (nextStatus ? '<button class="kanban-advance-btn" onclick="event.stopPropagation(); advanceStatus(\'' + t.id + '\', \'' + nextStatus + '\')">下一步 ▸</button>' : '✅') +
+              '<span class="kanban-btn-group">' +
+                (prevStatus ? '<button class="kanban-advance-btn kanban-back-btn" onclick="event.stopPropagation(); advanceStatus(\'' + t.id + '\', \'' + prevStatus + '\')" title="退回上一步">◂</button>' : '') +
+                (nextStatus ? '<button class="kanban-advance-btn" onclick="event.stopPropagation(); advanceStatus(\'' + t.id + '\', \'' + nextStatus + '\')">下一步 ▸</button>' : '✅') +
+              '</span>' +
             '</div>' +
           '</div>';
       }).join('') || '<div style="color:var(--text-tertiary); font-size:13px; text-align:center; padding:10px 0;">沒有任務</div>';
