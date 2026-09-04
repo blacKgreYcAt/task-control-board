@@ -201,6 +201,17 @@
   .workload-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
   .workload-count { flex: 0 0 46px; text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
 
+  .kanban-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+  .kanban-column { flex: 0 0 250px; background: var(--surface-2); border-radius: var(--radius-lg); padding: 10px; }
+  .kanban-column-header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; padding: 4px 6px 10px; }
+  .kanban-count { font-family: var(--font-mono); color: var(--text-tertiary); font-weight: 600; }
+  .kanban-card { background: var(--surface); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px; box-shadow: var(--shadow-sm); cursor: pointer; }
+  .kanban-card-title { font-size: 14px; font-weight: 650; margin-bottom: 6px; }
+  .kanban-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); }
+  .kanban-advance-btn { background: var(--accent-soft); color: var(--accent); border: none; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+  #searchInput { font-size: 15px; }
+
   .empty-state { text-align: center; padding: 64px 20px; color: var(--text-secondary); }
   .empty-state .glyph { font-size: 40px; margin-bottom: 10px; }
 
@@ -384,6 +395,7 @@
     <div class="segmented view-switch" id="viewSwitch"></div>
 
     <div id="listView">
+      <input type="text" id="searchInput" placeholder="🔍 搜尋任務標題或說明…" oninput="renderTasks()" style="margin:4px 0 10px;">
       <div class="toggle-row">
         <span class="toggle-label">只看指派給我的</span>
         <label class="switch">
@@ -434,6 +446,14 @@
           <div id="ganttRows"></div>
         </div>
       </div>
+    </div>
+
+    <div id="kanbanView" hidden>
+      <div class="kanban-board" id="kanbanBoard"></div>
+    </div>
+
+    <div id="feedView" hidden>
+      <div class="log-list" id="feedList"></div>
     </div>
   </div>
 
@@ -562,7 +582,7 @@
 
   function buildViewSwitch() {
     var wrap = document.getElementById('viewSwitch');
-    var opts = [['list', '任務清單'], ['overview', '部門總覽'], ['calendar', '時間軸'], ['gantt', '甘特圖']];
+    var opts = [['list', '任務清單'], ['kanban', '看板'], ['overview', '部門總覽'], ['calendar', '時間軸'], ['gantt', '甘特圖'], ['feed', '最新動態']];
     wrap.innerHTML = opts.map(function (o) {
       return '<button class="' + (state.view === o[0] ? 'active' : '') + '" onclick="setView(\'' + o[0] + '\')">' + o[1] + '</button>';
     }).join('');
@@ -574,9 +594,13 @@
     document.getElementById('deptOverview').hidden = v !== 'overview';
     document.getElementById('calendarView').hidden = v !== 'calendar';
     document.getElementById('ganttView').hidden = v !== 'gantt';
+    document.getElementById('kanbanView').hidden = v !== 'kanban';
+    document.getElementById('feedView').hidden = v !== 'feed';
     if (v === 'calendar') renderCalendar();
     if (v === 'overview') renderWorkload();
     if (v === 'gantt') renderGantt();
+    if (v === 'kanban') renderKanban();
+    if (v === 'feed') renderFeed();
   }
 
   // ---------- Members directory ----------
@@ -826,6 +850,69 @@
     return (d.getMonth() + 1) + '/' + d.getDate();
   }
 
+  // ---------- Kanban board ----------
+  function renderKanban() {
+    var board = document.getElementById('kanbanBoard');
+    var tasks = activeTasks_();
+    board.innerHTML = STATUS_ORDER.map(function (status) {
+      var col = tasks.filter(function (t) { return t.status === status; }).sort(taskUrgencySort_);
+      var meta = STATUS_META[status];
+      var nextIndex = STATUS_ORDER.indexOf(status) + 1;
+      var nextStatus = STATUS_ORDER[nextIndex];
+      var cards = col.map(function (t) {
+        var di = dueInfo(t.dueDate);
+        return '' +
+          '<div class="kanban-card" onclick="openTaskDetail(\'' + t.id + '\')">' +
+            '<div class="kanban-card-title">' + escapeHtml(t.title) + '</div>' +
+            '<div class="kanban-card-meta">' +
+              '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
+              (nextStatus ? '<button class="kanban-advance-btn" onclick="event.stopPropagation(); advanceStatus(\'' + t.id + '\', \'' + nextStatus + '\')">下一步 ▸</button>' : '✅') +
+            '</div>' +
+          '</div>';
+      }).join('') || '<div style="color:var(--text-tertiary); font-size:13px; text-align:center; padding:10px 0;">沒有任務</div>';
+      return '' +
+        '<div class="kanban-column">' +
+          '<div class="kanban-column-header" style="color:' + meta.fg + ';">' + status + '<span class="kanban-count">' + col.length + '</span></div>' +
+          cards +
+        '</div>';
+    }).join('');
+  }
+
+  function advanceStatus(id, nextStatus) {
+    apiPost({ action: 'addUpdate', taskId: id, author: state.userName || '未署名', text: '', newStatus: nextStatus }).then(function (res) {
+      if (!res.ok) return showToast('更新失敗：' + res.error);
+      showToast('已更新為「' + nextStatus + '」');
+      refreshTasks();
+    });
+  }
+
+  // ---------- Global activity feed ----------
+  function renderFeed() {
+    var el = document.getElementById('feedList');
+    el.innerHTML = '<div style="color:var(--text-tertiary); font-size:14px; text-align:center; padding:20px 0;">載入中…</div>';
+    apiGet('allUpdates').then(function (res) {
+      if (!res.ok) { el.innerHTML = ''; return showToast('讀取失敗：' + res.error); }
+      var updates = res.updates || [];
+      if (updates.length === 0) {
+        el.innerHTML = '<div class="empty-state"><div class="glyph">📰</div>還沒有任何動態</div>';
+        return;
+      }
+      el.innerHTML = updates.map(function (u) {
+        var t = taskById_(u.taskId);
+        return '' +
+          '<div class="log-entry" style="cursor:pointer;" onclick="openTaskDetail(\'' + u.taskId + '\')">' +
+            '<span class="avatar" style="margin-left:0;">' + initials(u.author) + '</span>' +
+            '<div class="log-body">' +
+              '<div class="log-head"><span class="log-author">' + escapeHtml(u.author || '匿名') + '</span><span class="log-time">' + escapeHtml((u.createdAt || '').replace('T', ' ')) + '</span></div>' +
+              '<div class="log-text" style="font-weight:600; color:var(--accent);">' + escapeHtml(t ? t.title : '（任務已刪除）') + '</div>' +
+              (u.text ? '<div class="log-text">' + escapeHtml(u.text) + '</div>' : '') +
+              (u.statusSnapshot ? '<span class="log-status-tag" style="color:' + (STATUS_META[u.statusSnapshot] || STATUS_META['待處理']).fg + '; background:' + (STATUS_META[u.statusSnapshot] || STATUS_META['待處理']).bg + ';">狀態 → ' + escapeHtml(u.statusSnapshot) + '</span>' : '') +
+            '</div>' +
+          '</div>';
+      }).join('');
+    }).catch(function () { showToast('連線失敗'); });
+  }
+
   // ---------- Calendar / timeline view ----------
   function shiftCalMonth(delta) {
     state.calMonth += delta;
@@ -927,6 +1014,7 @@
   function renderTasks() {
     var onlyMine = document.getElementById('onlyMineToggle').checked;
     var showArchived = document.getElementById('showArchivedToggle').checked;
+    var query = (document.getElementById('searchInput').value || '').trim().toLowerCase();
     var list = state.tasks.filter(function (t) {
       if (!showArchived && t.archived) return false;
       if (state.statusFilter !== '全部' && t.status !== state.statusFilter) return false;
@@ -935,6 +1023,7 @@
         var mine = t.assignee === state.userName || (t.collaborators || []).indexOf(state.userName) !== -1;
         if (!mine) return false;
       }
+      if (query && (t.title || '').toLowerCase().indexOf(query) === -1 && (t.notes || '').toLowerCase().indexOf(query) === -1) return false;
       return true;
     });
     list.sort(taskUrgencySort_);
@@ -1086,7 +1175,9 @@
       '<label class="field-label">所屬大案子（選填）</label>' +
       '<select id="tfParentId">' + otherTaskOptions_(t.id, t.parentId, '無（獨立任務）') + '</select>' +
       '<label class="field-label">參考連結（選填）</label>' +
-      '<input type="text" id="tfLink" placeholder="Google Drive／商品照片連結等" value="' + escapeHtml(t.link || '') + '">' +
+      '<input type="text" id="tfLink" placeholder="貼現成連結，或用下面上傳附件自動帶入" value="' + escapeHtml(t.link || '') + '">' +
+      '<label class="field-label">或上傳附件（選填，5MB 以內，會存到你的 Google Drive）</label>' +
+      '<input type="file" id="tfFile">' +
       '<label class="field-label">說明（選填）</label>' +
       '<textarea id="tfNotes" placeholder="工作內容細節、注意事項…">' + escapeHtml(t.notes || '') + '</textarea>';
   }
@@ -1131,15 +1222,41 @@
     document.getElementById('modalRoot').innerHTML = html;
   }
 
+  function readFileAsBase64_(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function attachFileIfAny_() {
+    var input = document.getElementById('tfFile');
+    var file = input && input.files && input.files[0];
+    if (!file) return Promise.resolve(null);
+    if (file.size > 5 * 1024 * 1024) { showToast('檔案超過 5MB，請改貼連結'); return Promise.resolve(null); }
+    showToast('附件上傳中…');
+    return readFileAsBase64_(file).then(function (base64) {
+      return apiPost({ action: 'uploadFile', filename: file.name, mimeType: file.type, dataBase64: base64 });
+    }).then(function (res) {
+      if (!res.ok) { showToast('附件上傳失敗：' + res.error); return null; }
+      return res.file.url;
+    }).catch(function () { showToast('附件上傳失敗'); return null; });
+  }
+
   function submitNewTask() {
     var form = readTaskForm_();
     if (!form.title) return showToast('請輸入任務標題');
-    var payload = Object.assign({ action: 'createTask', status: '待處理', createdBy: state.userName }, form);
-    apiPost(payload).then(function (res) {
-      if (!res.ok) return showToast('建立失敗：' + res.error);
-      closeModal();
-      showToast('已建立任務');
-      refreshTasks();
+    attachFileIfAny_().then(function (uploadedUrl) {
+      if (uploadedUrl) form.link = uploadedUrl;
+      var payload = Object.assign({ action: 'createTask', status: '待處理', createdBy: state.userName }, form);
+      apiPost(payload).then(function (res) {
+        if (!res.ok) return showToast('建立失敗：' + res.error);
+        closeModal();
+        showToast('已建立任務');
+        refreshTasks();
+      });
     });
   }
 
@@ -1161,13 +1278,33 @@
   function submitEditTask(id) {
     var form = readTaskForm_();
     if (!form.title) return showToast('請輸入任務標題');
-    var payload = Object.assign({ action: 'updateTask', id: id }, form);
-    apiPost(payload).then(function (res) {
-      if (!res.ok) return showToast('儲存失敗：' + res.error);
-      showToast('已儲存變更');
-      refreshTasks();
-      openTaskDetail(id);
+    attachFileIfAny_().then(function (uploadedUrl) {
+      if (uploadedUrl) form.link = uploadedUrl;
+      var payload = Object.assign({ action: 'updateTask', id: id }, form);
+      apiPost(payload).then(function (res) {
+        if (!res.ok) return showToast('儲存失敗：' + res.error);
+        showToast('已儲存變更');
+        refreshTasks();
+        openTaskDetail(id);
+      });
     });
+  }
+
+  function openDuplicateTask(id) {
+    var t = state.tasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var clone = Object.assign({}, t, { title: t.title + '（複製）', dueDate: '', startDate: '', status: '待處理', id: undefined });
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header"><div class="sheet-title">複製任務</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
+          '<div style="color:var(--text-secondary); font-size:13.5px; margin-bottom:6px;">已帶入原任務的部門/人員/說明，記得設定新的日期</div>' +
+          taskFormFieldsHtml_(clone) +
+          '<div style="margin-top:18px;"><button class="primary-btn" style="width:100%; justify-content:center;" onclick="submitNewTask()">建立這個複製任務</button></div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
   }
 
   function toggleArchive(id, archived) {
@@ -1279,7 +1416,8 @@
             '<button class="primary-btn" onclick="submitUpdate(\'' + t.id + '\')">送出</button>' +
           '</div>' +
 
-          '<div style="display:flex; justify-content:center; gap:18px; margin-top:18px;">' +
+          '<div style="display:flex; justify-content:center; flex-wrap:wrap; gap:18px; margin-top:18px;">' +
+            '<button class="text-btn" onclick="openDuplicateTask(\'' + t.id + '\')">複製任務</button>' +
             '<button class="text-btn" onclick="toggleArchive(\'' + t.id + '\', ' + (!t.archived) + ')">' + (t.archived ? '取消封存' : '封存此任務') + '</button>' +
             '<button class="danger-text-btn" onclick="removeTask(\'' + t.id + '\')">刪除此任務</button>' +
           '</div>' +
