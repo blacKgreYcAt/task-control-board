@@ -170,6 +170,10 @@
   }
   .avatar:first-child { margin-left: 0; }
 
+  .person-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .person-chip { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
+  .person-chip.host { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
   .empty-state { text-align: center; padding: 64px 20px; color: var(--text-secondary); }
   .empty-state .glyph { font-size: 40px; margin-bottom: 10px; }
 
@@ -498,7 +502,11 @@
 
   function buildDeptFilter() {
     var wrap = document.getElementById('deptFilter');
-    var depts = Array.from(new Set(state.tasks.map(function (t) { return t.department; }).filter(Boolean)));
+    var depts = Array.from(new Set(
+      state.tasks.map(function (t) { return t.department; })
+        .concat(state.tasks.reduce(function (acc, t) { return acc.concat(t.supportDepts || []); }, []))
+        .filter(Boolean)
+    ));
     var opts = ['全部'].concat(depts);
     wrap.innerHTML = opts.map(function (d) {
       return '<button class="chip ' + (state.deptFilter === d ? 'active' : '') + '" onclick="setDeptFilter(\'' + escapeHtml(d).replace(/'/g, "\\'") + '\')">' + escapeHtml(d) + '</button>';
@@ -761,13 +769,21 @@
 
   var PRIORITY_FLAG = { '高': '🔺 高', '中': '● 中', '低': '▽ 低' };
 
+  var DEPT_PALETTE = ['#5E5CE6', '#0A84FF', '#30B0C7', '#FF9F0A', '#FF375F', '#BF5AF2', '#34C759', '#A2845E'];
+  function colorForKey_(key) {
+    if (!key) return DEPT_PALETTE[0];
+    var hash = 0;
+    for (var i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    return DEPT_PALETTE[hash % DEPT_PALETTE.length];
+  }
+
   function renderTasks() {
     var onlyMine = document.getElementById('onlyMineToggle').checked;
     var showArchived = document.getElementById('showArchivedToggle').checked;
     var list = state.tasks.filter(function (t) {
       if (!showArchived && t.archived) return false;
       if (state.statusFilter !== '全部' && t.status !== state.statusFilter) return false;
-      if (state.deptFilter !== '全部' && t.department !== state.deptFilter) return false;
+      if (state.deptFilter !== '全部' && t.department !== state.deptFilter && (t.supportDepts || []).indexOf(state.deptFilter) === -1) return false;
       if (onlyMine) {
         var mine = t.assignee === state.userName || (t.collaborators || []).indexOf(state.userName) !== -1;
         if (!mine) return false;
@@ -785,23 +801,27 @@
       var meta = STATUS_META[t.status] || STATUS_META['待處理'];
       var di = dueInfo(t.dueDate);
       var collabs = (t.collaborators || []);
-      var avatars = [t.assignee].concat(collabs).filter(Boolean).slice(0, 4);
+      var supportDepts = (t.supportDepts || []);
       var priorityFlag = PRIORITY_FLAG[t.priority] || '';
+      var deptColor = colorForKey_(t.department);
+      var peopleChips = ''
+        + (t.assignee ? '<span class="person-chip host">🎯 ' + escapeHtml(t.assignee) + '</span>' : '')
+        + collabs.map(function (c) { return '<span class="person-chip">🤝 ' + escapeHtml(c) + '</span>'; }).join('');
       return '' +
-        '<div class="task-card ' + (t.archived ? 'is-archived' : '') + '" onclick="openTaskDetail(\'' + t.id + '\')">' +
+        '<div class="task-card ' + (t.archived ? 'is-archived' : '') + '" style="border-left:4px solid ' + deptColor + ';" onclick="openTaskDetail(\'' + t.id + '\')">' +
           '<div class="task-top">' +
             '<div class="task-title">' + escapeHtml(t.title) + '</div>' +
             '<span class="status-pill" style="color:' + meta.fg + '; background:' + meta.bg + ';">' + escapeHtml(t.status) + '</span>' +
           '</div>' +
           '<div class="task-meta">' +
-            (t.department ? '<span class="meta-tag">' + escapeHtml(t.department) + '</span>' : '') +
+            (t.department ? '<span class="meta-tag" style="color:' + deptColor + '; background:color-mix(in srgb, ' + deptColor + ' 16%, var(--surface-2));">' + escapeHtml(t.department) + '</span>' : '') +
+            supportDepts.map(function (d) { return '<span class="meta-tag">+ ' + escapeHtml(d) + '</span>'; }).join('') +
             (t.brand ? '<span class="meta-tag">' + escapeHtml(t.brand) + '</span>' : '') +
-            '<span>👤 ' + escapeHtml(t.assignee || '未指派') + '</span>' +
             '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
             (priorityFlag ? '<span class="priority-flag ' + t.priority + '">' + priorityFlag + '</span>' : '') +
             (t.archived ? '<span class="archived-tag">已封存</span>' : '') +
           '</div>' +
-          (avatars.length ? '<div class="avatars">' + avatars.map(function (a) { return '<span class="avatar" title="' + escapeHtml(a) + '">' + initials(a) + '</span>'; }).join('') + '</div>' : '') +
+          (peopleChips ? '<div class="person-chip-row">' + peopleChips + '</div>' : '') +
         '</div>';
     }).join('');
   }
@@ -874,7 +894,11 @@
 
   function taskFormFieldsHtml_(t) {
     t = t || {};
-    var depts = Array.from(new Set(state.tasks.map(function (x) { return x.department; }).filter(Boolean)));
+    var depts = Array.from(new Set(
+      state.tasks.map(function (x) { return x.department; })
+        .concat(state.tasks.reduce(function (acc, x) { return acc.concat(x.supportDepts || []); }, []))
+        .filter(Boolean)
+    ));
     var brands = Array.from(new Set(state.tasks.map(function (x) { return x.brand; }).filter(Boolean)));
     var assignees = Array.from(new Set(memberNames_().concat(state.tasks.map(function (x) { return x.assignee; })).filter(Boolean)));
     var priorityOptions = ['高', '中', '低'].map(function (p) {
@@ -883,14 +907,16 @@
     return '' +
       '<label class="field-label">任務標題</label>' +
       '<input type="text" id="tfTitle" placeholder="例如：9 月新品 IG 貼文素材" value="' + escapeHtml(t.title || '') + '">' +
-      '<label class="field-label">部門</label>' +
-      '<input type="text" id="tfDept" list="deptList" placeholder="例如：行銷 / 直營門市 / 電商" value="' + escapeHtml(t.department || '') + '">' +
+      '<label class="field-label">主要負責部門</label>' +
+      '<input type="text" id="tfDept" list="deptList" placeholder="例如：行銷部 / 直營門市 / 電商" value="' + escapeHtml(t.department || '') + '">' +
       '<datalist id="deptList">' + depts.map(function (d) { return '<option value="' + escapeHtml(d) + '">'; }).join('') + '</datalist>' +
+      '<label class="field-label">協力部門（選填，可多個）</label>' +
+      '<input type="text" id="tfSupportDepts" list="deptList" placeholder="以逗號分隔，例如：戶外林區, 營業三部" value="' + escapeHtml((t.supportDepts || []).join(', ')) + '">' +
       '<label class="field-label">品牌／系列</label>' +
       '<input type="text" id="tfBrand" list="brandList" placeholder="選填" value="' + escapeHtml(t.brand || '') + '">' +
       '<datalist id="brandList">' + brands.map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join('') + '</datalist>' +
-      '<label class="field-label">負責人</label>' +
-      '<input type="text" id="tfAssignee" list="assigneeList" placeholder="這項任務由誰負責" value="' + escapeHtml(t.assignee || '') + '">' +
+      '<label class="field-label">專案主持人</label>' +
+      '<input type="text" id="tfAssignee" list="assigneeList" placeholder="這項任務由誰主持" value="' + escapeHtml(t.assignee || '') + '">' +
       '<datalist id="assigneeList">' + assignees.map(function (a) { return '<option value="' + escapeHtml(a) + '">'; }).join('') + '</datalist>' +
       '<label class="field-label">協辦人員</label>' +
       '<input type="text" id="tfCollab" placeholder="以逗號分隔，例如：小美, 小華" value="' + escapeHtml((t.collaborators || []).join(', ')) + '">' +
@@ -908,6 +934,7 @@
     return {
       title: document.getElementById('tfTitle').value.trim(),
       department: document.getElementById('tfDept').value.trim(),
+      supportDepts: document.getElementById('tfSupportDepts').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
       brand: document.getElementById('tfBrand').value.trim(),
       assignee: document.getElementById('tfAssignee').value.trim(),
       collaborators: document.getElementById('tfCollab').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
@@ -992,6 +1019,8 @@
     var meta = STATUS_META[t.status] || STATUS_META['待處理'];
     var di = dueInfo(t.dueDate);
     var collabs = (t.collaborators || []);
+    var supportDepts = (t.supportDepts || []);
+    var deptColor = colorForKey_(t.department);
     var statusOptions = STATUS_ORDER.map(function (s) {
       return '<option value="' + s + '"' + (s === t.status ? ' selected' : '') + '>' + s + '</option>';
     }).join('');
@@ -1030,13 +1059,14 @@
           '</div>' +
 
           '<div class="info-grid">' +
-            '<div class="info-item"><div class="k">部門</div><div class="v">' + escapeHtml(t.department || '—') + '</div></div>' +
+            '<div class="info-item"><div class="k">主要負責部門</div><div class="v" style="color:' + deptColor + ';">' + escapeHtml(t.department || '—') + '</div></div>' +
             '<div class="info-item"><div class="k">品牌／系列</div><div class="v">' + escapeHtml(t.brand || '—') + '</div></div>' +
-            '<div class="info-item"><div class="k">負責人</div><div class="v">' + escapeHtml(t.assignee || '未指派') + '</div></div>' +
+            '<div class="info-item"><div class="k">專案主持人</div><div class="v">' + escapeHtml(t.assignee || '未指派') + '</div></div>' +
             '<div class="info-item"><div class="k">截止日期</div><div class="v ' + (di.cls === 'overdue' ? 'due-badge overdue' : '') + '">' + escapeHtml(t.dueDate || '未設定') + (di.cls ? '（' + di.label + '）' : '') + '</div></div>' +
             '<div class="info-item"><div class="k">優先級</div><div class="v priority-flag ' + (t.priority || '中') + '">' + (PRIORITY_FLAG[t.priority] || PRIORITY_FLAG['中']) + '</div></div>' +
             (t.link ? '<div class="info-item"><div class="k">參考連結</div><div class="v"><a class="task-link" href="' + escapeHtml(t.link) + '" target="_blank" rel="noopener">🔗 開啟連結</a></div></div>' : '') +
           '</div>' +
+          (supportDepts.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協力部門</div><div class="collab-chips">' + supportDepts.map(function (d) { return '<span class="collab-chip">' + escapeHtml(d) + '</span>'; }).join('') + '</div></div>' : '') +
           (collabs.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協辦人員</div><div class="collab-chips">' + collabs.map(function (c) { return '<span class="collab-chip">' + escapeHtml(c) + '</span>'; }).join('') + '</div></div>' : '') +
           (t.notes ? '<div class="info-item" style="margin-bottom:14px;"><div class="k">說明</div><div class="v" style="font-weight:500;">' + escapeHtml(t.notes) + '</div></div>' : '') +
 
