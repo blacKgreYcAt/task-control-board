@@ -242,6 +242,41 @@
 
   [hidden] { display: none !important; }
   ::selection { background: var(--accent-soft); }
+
+  .view-switch { margin: 14px 0 4px; }
+
+  .reminder-banner { margin: 14px 0 2px; }
+  .reminder-banner-title { font-size: 13.5px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 8px; }
+  .reminder-scroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+  .reminder-card {
+    flex: 0 0 auto; min-width: 200px; max-width: 240px; border-radius: var(--radius-md);
+    padding: 10px 12px; cursor: pointer; border: 1px solid transparent;
+  }
+  .reminder-card.overdue { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+  .reminder-card.soon { background: var(--status-waiting-bg); border-color: color-mix(in srgb, var(--status-waiting) 35%, transparent); }
+  .reminder-card-date { font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+  .reminder-card.overdue .reminder-card-date { color: var(--danger); }
+  .reminder-card.soon .reminder-card-date { color: var(--status-waiting); }
+  .reminder-card-label { font-size: 14px; font-weight: 600; margin-top: 3px; }
+  .reminder-card-sub { font-size: 12.5px; color: var(--text-secondary); margin-top: 1px; }
+
+  .dept-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  .dept-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; box-shadow: var(--shadow-sm); cursor: pointer; }
+  .dept-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .dept-card-name { font-size: 16.5px; font-weight: 700; }
+  .dept-card-pct { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text-secondary); }
+  .dept-progress-track { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-bottom: 8px; }
+  .dept-progress-fill { height: 100%; background: var(--status-done); border-radius: 999px; }
+  .dept-card-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); }
+  .dept-stat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  .milestone-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; }
+  .milestone-item { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 7px 10px; }
+  .milestone-date { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--accent); flex: 0 0 auto; }
+  .milestone-label { font-size: 14px; flex: 1; }
+  .milestone-add-row { display: flex; gap: 6px; margin-top: 4px; }
+  .milestone-add-row input[type=date] { flex: 0 0 132px; }
+  .milestone-add-row input[type=text] { flex: 1; }
 </style>
 </head>
 <body>
@@ -271,18 +306,31 @@
   <div class="app">
     <div class="stat-row" id="statRow"></div>
 
-    <div class="toggle-row">
-      <span class="toggle-label">只看指派給我的</span>
-      <label class="switch">
-        <input type="checkbox" id="onlyMineToggle" onchange="renderTasks()">
-        <span class="slider"></span>
-      </label>
+    <div class="reminder-banner" id="reminderBanner" hidden>
+      <div class="reminder-banner-title">🔔 近期提醒</div>
+      <div class="reminder-scroll" id="reminderScroll"></div>
     </div>
 
-    <div class="segmented" id="statusFilter"></div>
-    <div class="chip-row" id="deptFilter"></div>
+    <div class="segmented view-switch" id="viewSwitch"></div>
 
-    <div class="task-list" id="taskList"></div>
+    <div id="listView">
+      <div class="toggle-row">
+        <span class="toggle-label">只看指派給我的</span>
+        <label class="switch">
+          <input type="checkbox" id="onlyMineToggle" onchange="renderTasks()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="segmented" id="statusFilter"></div>
+      <div class="chip-row" id="deptFilter"></div>
+
+      <div class="task-list" id="taskList"></div>
+    </div>
+
+    <div id="deptOverview" hidden>
+      <div class="dept-grid" id="deptGrid"></div>
+    </div>
   </div>
 
   <button class="fab" onclick="openNewTask()" title="新增任務">＋</button>
@@ -308,6 +356,7 @@
     tasks: [],
     statusFilter: '全部',
     deptFilter: '全部',
+    view: 'list',
     loading: false,
     pollTimer: null
   };
@@ -354,6 +403,7 @@
     document.getElementById('mainApp').hidden = false;
     ensureUserName();
     buildStatusFilter();
+    buildViewSwitch();
     refreshTasks();
     state.pollTimer = setInterval(function () { refreshTasks(false); }, 20000);
     document.addEventListener('visibilitychange', function () {
@@ -397,7 +447,25 @@
   }
   function setDeptFilter(d) { state.deptFilter = d; buildDeptFilter(); renderTasks(); }
 
+  function buildViewSwitch() {
+    var wrap = document.getElementById('viewSwitch');
+    var opts = [['list', '任務清單'], ['overview', '部門總覽']];
+    wrap.innerHTML = opts.map(function (o) {
+      return '<button class="' + (state.view === o[0] ? 'active' : '') + '" onclick="setView(\'' + o[0] + '\')">' + o[1] + '</button>';
+    }).join('');
+  }
+  function setView(v) {
+    state.view = v;
+    buildViewSwitch();
+    document.getElementById('listView').hidden = v !== 'list';
+    document.getElementById('deptOverview').hidden = v !== 'overview';
+  }
+
   // ---------- Due date helpers ----------
+  function todayStr_() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
   function dueInfo(dueDate) {
     if (!dueDate) return { label: '無截止日', cls: '' };
     var today = new Date(); today.setHours(0,0,0,0);
@@ -424,7 +492,9 @@
       state.tasks = res.tasks || [];
       buildDeptFilter();
       renderStats();
+      renderReminders();
       renderTasks();
+      renderDeptOverview();
     }).catch(function () { showToast('連線失敗，請檢查網路'); });
   }
 
@@ -444,6 +514,92 @@
     }).join('');
   }
 
+  function taskUrgencySort_(a, b) {
+    var doneA = a.status === '已完成' ? 1 : 0, doneB = b.status === '已完成' ? 1 : 0;
+    if (doneA !== doneB) return doneA - doneB;
+    var da = a.dueDate || '9999-99-99', db_ = b.dueDate || '9999-99-99';
+    return da < db_ ? -1 : da > db_ ? 1 : 0;
+  }
+
+  // ---------- Reminders ----------
+  function renderReminders() {
+    var items = [];
+    state.tasks.forEach(function (t) {
+      if (t.status === '已完成') return;
+      var di = dueInfo(t.dueDate);
+      if (di.cls) {
+        items.push({ date: t.dueDate, cls: di.cls, dateLabel: '截止 · ' + di.label, label: t.title, sub: t.department || '未分類', taskId: t.id });
+      }
+      (t.milestones || []).forEach(function (m) {
+        if (!m.date) return;
+        var mi = dueInfo(m.date);
+        if (mi.cls) {
+          var when = mi.cls === 'overdue' ? mi.label.replace('已逾期', '已過') : (mi.cls === 'soon' && m.date === todayStr_() ? '就是今天' : m.date);
+          items.push({ date: m.date, cls: mi.cls, dateLabel: when, label: m.label || '提醒事項', sub: t.title, taskId: t.id });
+        }
+      });
+    });
+    items.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+
+    var banner = document.getElementById('reminderBanner');
+    if (items.length === 0) { banner.hidden = true; return; }
+    banner.hidden = false;
+    document.getElementById('reminderScroll').innerHTML = items.map(function (it) {
+      var dateLabel = it.dateLabel;
+      return '' +
+        '<div class="reminder-card ' + it.cls + '" onclick="openTaskDetail(\'' + it.taskId + '\')">' +
+          '<div class="reminder-card-date">' + escapeHtml(dateLabel) + '</div>' +
+          '<div class="reminder-card-label">' + escapeHtml(it.label) + '</div>' +
+          '<div class="reminder-card-sub">' + escapeHtml(it.sub) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  // ---------- Department overview ----------
+  function renderDeptOverview() {
+    var groups = {};
+    state.tasks.forEach(function (t) {
+      var key = t.department || '未分類';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    var rows = Object.keys(groups).map(function (name) {
+      var tasks = groups[name];
+      var total = tasks.length;
+      var done = tasks.filter(function (t) { return t.status === '已完成'; }).length;
+      var inProgress = tasks.filter(function (t) { return t.status === '進行中'; }).length;
+      var overdue = tasks.filter(function (t) { return t.status !== '已完成' && dueInfo(t.dueDate).cls === 'overdue'; }).length;
+      var pct = total ? Math.round((done / total) * 100) : 0;
+      return { name: name, total: total, done: done, inProgress: inProgress, overdue: overdue, pct: pct };
+    });
+    rows.sort(function (a, b) { return b.overdue - a.overdue || (b.total - b.done) - (a.total - a.done); });
+
+    var grid = document.getElementById('deptGrid');
+    if (rows.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><div class="glyph">📊</div>還沒有任務資料</div>';
+      return;
+    }
+    grid.innerHTML = rows.map(function (r) {
+      return '' +
+        '<div class="dept-card" onclick="jumpToDept(\'' + escapeHtml(r.name).replace(/'/g, "\\'") + '\')">' +
+          '<div class="dept-card-top"><div class="dept-card-name">' + escapeHtml(r.name) + '</div><div class="dept-card-pct">' + r.pct + '% 完成</div></div>' +
+          '<div class="dept-progress-track"><div class="dept-progress-fill" style="width:' + r.pct + '%;"></div></div>' +
+          '<div class="dept-card-stats">' +
+            '<span>共 ' + r.total + ' 項</span>' +
+            '<span><span class="dept-stat-dot" style="background:var(--status-progress);"></span>進行中 ' + r.inProgress + '</span>' +
+            (r.overdue > 0 ? '<span style="color:var(--danger); font-weight:700;"><span class="dept-stat-dot" style="background:var(--danger);"></span>逾期 ' + r.overdue + '</span>' : '') +
+          '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function jumpToDept(name) {
+    state.deptFilter = name;
+    setView('list');
+    buildDeptFilter();
+    renderTasks();
+  }
+
   function renderTasks() {
     var onlyMine = document.getElementById('onlyMineToggle').checked;
     var list = state.tasks.filter(function (t) {
@@ -455,10 +611,7 @@
       }
       return true;
     });
-    list.sort(function (a, b) {
-      var da = a.dueDate || '9999-99-99', db_ = b.dueDate || '9999-99-99';
-      return da < db_ ? -1 : da > db_ ? 1 : 0;
-    });
+    list.sort(taskUrgencySort_);
 
     var listEl = document.getElementById('taskList');
     if (list.length === 0) {
@@ -600,6 +753,11 @@
         '</div>';
     }).join('') || '<div style="color:var(--text-tertiary); font-size:14px; text-align:center; padding:12px 0;">還沒有進度紀錄</div>';
 
+    var milestones = (t.milestones || []).slice().sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; });
+    var milestoneListHtml = milestones.map(function (m) {
+      return '<div class="milestone-item"><span class="milestone-date">' + escapeHtml(m.date || '') + '</span><span class="milestone-label">' + escapeHtml(m.label) + '</span></div>';
+    }).join('') || '<div style="color:var(--text-tertiary); font-size:13.5px;">尚未新增提醒事項</div>';
+
     var html = '' +
       '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
         '<div class="modal-sheet">' +
@@ -621,6 +779,15 @@
           '</div>' +
           (collabs.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協辦人員</div><div class="collab-chips">' + collabs.map(function (c) { return '<span class="collab-chip">' + escapeHtml(c) + '</span>'; }).join('') + '</div></div>' : '') +
           (t.notes ? '<div class="info-item" style="margin-bottom:14px;"><div class="k">說明</div><div class="v" style="font-weight:500;">' + escapeHtml(t.notes) + '</div></div>' : '') +
+
+          '<hr class="divider">' +
+          '<label class="field-label" style="margin-top:0;">提醒事項（開會、繳交資料等重要日期）</label>' +
+          '<div class="milestone-list">' + milestoneListHtml + '</div>' +
+          '<div class="milestone-add-row">' +
+            '<input type="date" id="msDate">' +
+            '<input type="text" id="msLabel" placeholder="例如：部門會議 / 送交設計稿">' +
+            '<button class="secondary-btn" onclick="submitMilestone(\'' + t.id + '\')">加入</button>' +
+          '</div>' +
 
           '<hr class="divider">' +
           '<label class="field-label" style="margin-top:0;">進度紀錄</label>' +
@@ -653,6 +820,18 @@
     apiPost({ action: 'addUpdate', taskId: id, author: state.userName || '未署名', text: text }).then(function (res) {
       if (!res.ok) return showToast('送出失敗：' + res.error);
       showToast('已新增進度');
+      refreshTasks();
+      openTaskDetail(id);
+    });
+  }
+
+  function submitMilestone(id) {
+    var date = document.getElementById('msDate').value;
+    var label = document.getElementById('msLabel').value.trim();
+    if (!date || !label) return showToast('請填寫日期跟說明');
+    apiPost({ action: 'addMilestone', taskId: id, date: date, label: label }).then(function (res) {
+      if (!res.ok) return showToast('新增失敗：' + res.error);
+      showToast('已新增提醒事項');
       refreshTasks();
       openTaskDetail(id);
     });
