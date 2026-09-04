@@ -174,6 +174,33 @@
   .person-chip { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
   .person-chip.host { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 
+  .parent-breadcrumb { font-size: 12.5px; color: var(--text-tertiary); font-weight: 600; margin-bottom: -2px; }
+  .delay-tag { font-size: 12.5px; font-weight: 700; color: var(--danger); }
+  .blocked-tag { font-size: 12.5px; font-weight: 700; color: var(--status-waiting); }
+
+  .subtask-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; }
+  .subtask-item { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; cursor: pointer; }
+  .subtask-item .status-pill { font-size: 11px; padding: 2px 8px; }
+  .subtask-title { flex: 1; font-size: 14px; font-weight: 600; }
+
+  .gantt-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .gantt-row:last-child { border-bottom: none; }
+  .gantt-label { flex: 0 0 128px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .gantt-track { flex: 1; position: relative; height: 22px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+  .gantt-bar { position: absolute; top: 3px; height: 16px; border-radius: 999px; cursor: pointer; }
+  .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 2; }
+  .gantt-scale { display: flex; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin: 0 0 6px 138px; }
+  .gantt-scroll { overflow-x: auto; }
+  .gantt-inner { min-width: 640px; }
+
+  .workload-section { margin-top: 22px; }
+  .workload-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .workload-row:last-child { border-bottom: none; }
+  .workload-name { flex: 0 0 96px; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workload-bar-track { flex: 1; height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .workload-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+  .workload-count { flex: 0 0 46px; text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
+
   .empty-state { text-align: center; padding: 64px 20px; color: var(--text-secondary); }
   .empty-state .glyph { font-size: 40px; margin-bottom: 10px; }
 
@@ -380,6 +407,10 @@
 
     <div id="deptOverview" hidden>
       <div class="dept-grid" id="deptGrid"></div>
+      <div class="workload-section">
+        <label class="field-label" style="margin-top:0;">人員工作量（進行中的任務數）</label>
+        <div id="workloadList"></div>
+      </div>
     </div>
 
     <div id="calendarView" hidden>
@@ -389,6 +420,20 @@
         <button class="icon-btn" onclick="shiftCalMonth(1)">›</button>
       </div>
       <div class="cal-grid" id="calGrid"></div>
+    </div>
+
+    <div id="ganttView" hidden>
+      <div class="cal-header">
+        <button class="icon-btn" onclick="shiftGanttWindow(-1)">‹</button>
+        <div class="cal-title" id="ganttTitle"></div>
+        <button class="icon-btn" onclick="shiftGanttWindow(1)">›</button>
+      </div>
+      <div class="gantt-scroll">
+        <div class="gantt-inner">
+          <div class="gantt-scale" id="ganttScale"></div>
+          <div id="ganttRows"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -419,6 +464,7 @@
     view: 'list',
     calYear: new Date().getFullYear(),
     calMonth: new Date().getMonth(),
+    ganttOffset: 0,
     loading: false,
     pollTimer: null
   };
@@ -516,7 +562,7 @@
 
   function buildViewSwitch() {
     var wrap = document.getElementById('viewSwitch');
-    var opts = [['list', '任務清單'], ['overview', '部門總覽'], ['calendar', '時間軸']];
+    var opts = [['list', '任務清單'], ['overview', '部門總覽'], ['calendar', '時間軸'], ['gantt', '甘特圖']];
     wrap.innerHTML = opts.map(function (o) {
       return '<button class="' + (state.view === o[0] ? 'active' : '') + '" onclick="setView(\'' + o[0] + '\')">' + o[1] + '</button>';
     }).join('');
@@ -527,7 +573,10 @@
     document.getElementById('listView').hidden = v !== 'list';
     document.getElementById('deptOverview').hidden = v !== 'overview';
     document.getElementById('calendarView').hidden = v !== 'calendar';
+    document.getElementById('ganttView').hidden = v !== 'gantt';
     if (v === 'calendar') renderCalendar();
+    if (v === 'overview') renderWorkload();
+    if (v === 'gantt') renderGantt();
   }
 
   // ---------- Members directory ----------
@@ -574,11 +623,19 @@
       renderReminders();
       renderTasks();
       renderDeptOverview();
+      renderWorkload();
+      if (state.view === 'calendar') renderCalendar();
+      if (state.view === 'gantt') renderGantt();
     }).catch(function () { showToast('連線失敗，請檢查網路'); });
   }
 
   function activeTasks_() {
     return state.tasks.filter(function (t) { return !t.archived; });
+  }
+
+  function taskById_(id) {
+    if (!id) return null;
+    return state.tasks.find(function (x) { return x.id === id; }) || null;
   }
 
   function renderStats() {
@@ -677,6 +734,96 @@
           '</div>' +
         '</div>';
     }).join('');
+  }
+
+  function renderWorkload() {
+    var el = document.getElementById('workloadList');
+    if (!el) return;
+    var counts = {};
+    activeTasks_().forEach(function (t) {
+      if (t.status === '已完成') return;
+      [t.assignee].concat(t.collaborators || []).filter(Boolean).forEach(function (name) {
+        counts[name] = (counts[name] || 0) + 1;
+      });
+    });
+    var rows = Object.keys(counts).map(function (name) { return { name: name, count: counts[name] }; });
+    rows.sort(function (a, b) { return b.count - a.count; });
+    if (rows.length === 0) {
+      el.innerHTML = '<div style="color:var(--text-tertiary); font-size:13.5px; padding:6px 0;">目前沒有進行中的任務</div>';
+      return;
+    }
+    var max = rows[0].count;
+    el.innerHTML = rows.map(function (r) {
+      return '' +
+        '<div class="workload-row">' +
+          '<div class="workload-name">' + escapeHtml(r.name) + '</div>' +
+          '<div class="workload-bar-track"><div class="workload-bar-fill" style="width:' + Math.round((r.count / max) * 100) + '%;"></div></div>' +
+          '<div class="workload-count">' + r.count + ' 項</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  // ---------- Gantt view ----------
+  function shiftGanttWindow(dir) {
+    state.ganttOffset += dir * 28;
+    renderGantt();
+  }
+
+  function renderGantt() {
+    var el = document.getElementById('ganttRows');
+    var scaleEl = document.getElementById('ganttScale');
+    if (!el) return;
+    var windowDays = 56;
+    var start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() + state.ganttOffset);
+    var end = new Date(start);
+    end.setDate(end.getDate() + windowDays);
+    document.getElementById('ganttTitle').textContent = fmtShort_(start) + ' – ' + fmtShort_(end);
+
+    var weekMarks = [];
+    for (var i = 0; i <= windowDays; i += 7) {
+      var d = new Date(start); d.setDate(d.getDate() + i);
+      weekMarks.push('<span style="flex:1;">' + fmtShort_(d) + '</span>');
+    }
+    scaleEl.innerHTML = weekMarks.join('');
+
+    var tasks = activeTasks_().filter(function (t) {
+      var s = t.startDate ? new Date(t.startDate) : (t.dueDate ? new Date(t.dueDate) : null);
+      var e = t.dueDate ? new Date(t.dueDate) : s;
+      if (!s || !e) return false;
+      return e >= start && s <= end;
+    });
+    tasks.sort(function (a, b) { return (a.dueDate || '') < (b.dueDate || '') ? -1 : 1; });
+
+    if (tasks.length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="glyph">📅</div>這個區間沒有排定日期的任務</div>';
+      return;
+    }
+
+    var todayOffsetPct = ((new Date().setHours(0, 0, 0, 0) - start) / 86400000) / windowDays * 100;
+    var todayLine = (todayOffsetPct >= 0 && todayOffsetPct <= 100) ? '<div class="gantt-today-line" style="left:' + todayOffsetPct + '%;"></div>' : '';
+
+    el.innerHTML = tasks.map(function (t) {
+      var s = t.startDate ? new Date(t.startDate) : new Date(t.dueDate);
+      var e = t.dueDate ? new Date(t.dueDate) : s;
+      var clampedStart = Math.max(s, start);
+      var clampedEnd = Math.min(new Date(e.getTime() + 86400000), end);
+      var leftPct = Math.max(0, ((clampedStart - start) / 86400000) / windowDays * 100);
+      var widthPct = Math.max(2, ((clampedEnd - clampedStart) / 86400000) / windowDays * 100);
+      var deptColor = colorForKey_(t.department);
+      return '' +
+        '<div class="gantt-row">' +
+          '<div class="gantt-label" title="' + escapeHtml(t.title) + '" onclick="openTaskDetail(\'' + t.id + '\')">' + escapeHtml(t.title) + '</div>' +
+          '<div class="gantt-track">' + todayLine +
+            '<div class="gantt-bar" style="left:' + leftPct + '%; width:' + widthPct + '%; background:' + deptColor + ';" title="' + escapeHtml(t.title) + '（' + (t.startDate || t.dueDate) + ' ~ ' + t.dueDate + '）" onclick="openTaskDetail(\'' + t.id + '\')"></div>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function fmtShort_(d) {
+    return (d.getMonth() + 1) + '/' + d.getDate();
   }
 
   // ---------- Calendar / timeline view ----------
@@ -804,11 +951,17 @@
       var supportDepts = (t.supportDepts || []);
       var priorityFlag = PRIORITY_FLAG[t.priority] || '';
       var deptColor = colorForKey_(t.department);
+      var blockedBy = taskById_(t.dependsOn);
+      var isBlocked = blockedBy && blockedBy.status !== '已完成';
+      var delayDays = t.status !== '已完成' && t.dueDate && t.originalDueDate && t.dueDate > t.originalDueDate
+        ? Math.round((new Date(t.dueDate) - new Date(t.originalDueDate)) / 86400000) : 0;
+      var parent = taskById_(t.parentId);
       var peopleChips = ''
         + (t.assignee ? '<span class="person-chip host">🎯 ' + escapeHtml(t.assignee) + '</span>' : '')
         + collabs.map(function (c) { return '<span class="person-chip">🤝 ' + escapeHtml(c) + '</span>'; }).join('');
       return '' +
         '<div class="task-card ' + (t.archived ? 'is-archived' : '') + '" style="border-left:4px solid ' + deptColor + ';" onclick="openTaskDetail(\'' + t.id + '\')">' +
+          (parent ? '<div class="parent-breadcrumb">⤷ 隸屬於：' + escapeHtml(parent.title) + '</div>' : '') +
           '<div class="task-top">' +
             '<div class="task-title">' + escapeHtml(t.title) + '</div>' +
             '<span class="status-pill" style="color:' + meta.fg + '; background:' + meta.bg + ';">' + escapeHtml(t.status) + '</span>' +
@@ -819,6 +972,8 @@
             (t.brand ? '<span class="meta-tag">' + escapeHtml(t.brand) + '</span>' : '') +
             '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
             (priorityFlag ? '<span class="priority-flag ' + t.priority + '">' + priorityFlag + '</span>' : '') +
+            (delayDays > 0 ? '<span class="delay-tag">⏰ 較原訂延後 ' + delayDays + ' 天</span>' : '') +
+            (isBlocked ? '<span class="blocked-tag">⛔ 待前置任務完成</span>' : '') +
             (t.archived ? '<span class="archived-tag">已封存</span>' : '') +
           '</div>' +
           (peopleChips ? '<div class="person-chip-row">' + peopleChips + '</div>' : '') +
@@ -922,12 +1077,27 @@
       '<input type="text" id="tfCollab" placeholder="以逗號分隔，例如：小美, 小華" value="' + escapeHtml((t.collaborators || []).join(', ')) + '">' +
       '<label class="field-label">優先級</label>' +
       '<select id="tfPriority">' + priorityOptions + '</select>' +
+      '<label class="field-label">開始日期（選填）</label>' +
+      '<input type="date" id="tfStart" value="' + escapeHtml(t.startDate || '') + '">' +
       '<label class="field-label">截止日期</label>' +
       '<input type="date" id="tfDue" value="' + escapeHtml(t.dueDate || '') + '">' +
+      '<label class="field-label">前置任務（選填，需先完成才輪到這個任務）</label>' +
+      '<select id="tfDependsOn">' + otherTaskOptions_(t.id, t.dependsOn, '無') + '</select>' +
+      '<label class="field-label">所屬大案子（選填）</label>' +
+      '<select id="tfParentId">' + otherTaskOptions_(t.id, t.parentId, '無（獨立任務）') + '</select>' +
       '<label class="field-label">參考連結（選填）</label>' +
       '<input type="text" id="tfLink" placeholder="Google Drive／商品照片連結等" value="' + escapeHtml(t.link || '') + '">' +
       '<label class="field-label">說明（選填）</label>' +
       '<textarea id="tfNotes" placeholder="工作內容細節、注意事項…">' + escapeHtml(t.notes || '') + '</textarea>';
+  }
+
+  function otherTaskOptions_(selfId, selectedId, blankLabel) {
+    var options = '<option value=""' + (!selectedId ? ' selected' : '') + '>' + blankLabel + '</option>';
+    options += state.tasks
+      .filter(function (x) { return x.id !== selfId; })
+      .map(function (x) { return '<option value="' + x.id + '"' + (x.id === selectedId ? ' selected' : '') + '>' + escapeHtml(x.title) + '</option>'; })
+      .join('');
+    return options;
   }
 
   function readTaskForm_() {
@@ -939,7 +1109,10 @@
       assignee: document.getElementById('tfAssignee').value.trim(),
       collaborators: document.getElementById('tfCollab').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
       priority: document.getElementById('tfPriority').value,
+      startDate: document.getElementById('tfStart').value,
       dueDate: document.getElementById('tfDue').value,
+      dependsOn: document.getElementById('tfDependsOn').value,
+      parentId: document.getElementById('tfParentId').value,
       link: document.getElementById('tfLink').value.trim(),
       notes: document.getElementById('tfNotes').value.trim()
     };
@@ -1021,6 +1194,11 @@
     var collabs = (t.collaborators || []);
     var supportDepts = (t.supportDepts || []);
     var deptColor = colorForKey_(t.department);
+    var blockedBy = taskById_(t.dependsOn);
+    var parent = taskById_(t.parentId);
+    var children = state.tasks.filter(function (x) { return x.parentId === t.id; });
+    var delayDays = t.status !== '已完成' && t.dueDate && t.originalDueDate && t.dueDate > t.originalDueDate
+      ? Math.round((new Date(t.dueDate) - new Date(t.originalDueDate)) / 86400000) : 0;
     var statusOptions = STATUS_ORDER.map(function (s) {
       return '<option value="' + s + '"' + (s === t.status ? ' selected' : '') + '>' + s + '</option>';
     }).join('');
@@ -1058,17 +1236,30 @@
             '<select class="status-select" id="detailStatus" style="color:' + meta.fg + '; background:' + meta.bg + '; border-color:' + meta.fg + ';" onchange="changeStatus(\'' + t.id + '\')">' + statusOptions + '</select>' +
           '</div>' +
 
+          (parent ? '<div class="parent-breadcrumb" style="margin-bottom:8px; cursor:pointer;" onclick="openTaskDetail(\'' + parent.id + '\')">⤷ 隸屬於：' + escapeHtml(parent.title) + '</div>' : '') +
+          (blockedBy ? '<div class="info-item" style="margin-bottom:12px; cursor:pointer;" onclick="openTaskDetail(\'' + blockedBy.id + '\')"><div class="k">前置任務</div><div class="v ' + (blockedBy.status !== '已完成' ? 'blocked-tag' : '') + '">' + (blockedBy.status !== '已完成' ? '⛔ ' : '✅ ') + escapeHtml(blockedBy.title) + '（' + escapeHtml(blockedBy.status) + '）</div></div>' : '') +
+
           '<div class="info-grid">' +
             '<div class="info-item"><div class="k">主要負責部門</div><div class="v" style="color:' + deptColor + ';">' + escapeHtml(t.department || '—') + '</div></div>' +
             '<div class="info-item"><div class="k">品牌／系列</div><div class="v">' + escapeHtml(t.brand || '—') + '</div></div>' +
             '<div class="info-item"><div class="k">專案主持人</div><div class="v">' + escapeHtml(t.assignee || '未指派') + '</div></div>' +
-            '<div class="info-item"><div class="k">截止日期</div><div class="v ' + (di.cls === 'overdue' ? 'due-badge overdue' : '') + '">' + escapeHtml(t.dueDate || '未設定') + (di.cls ? '（' + di.label + '）' : '') + '</div></div>' +
+            '<div class="info-item"><div class="k">開始日期</div><div class="v">' + escapeHtml(t.startDate || '未設定') + '</div></div>' +
+            '<div class="info-item"><div class="k">截止日期</div><div class="v ' + (di.cls === 'overdue' ? 'due-badge overdue' : '') + '">' + escapeHtml(t.dueDate || '未設定') + (di.cls ? '（' + di.label + '）' : '') + (delayDays > 0 ? ' <span class="delay-tag">⏰ 延後' + delayDays + '天</span>' : '') + '</div></div>' +
             '<div class="info-item"><div class="k">優先級</div><div class="v priority-flag ' + (t.priority || '中') + '">' + (PRIORITY_FLAG[t.priority] || PRIORITY_FLAG['中']) + '</div></div>' +
             (t.link ? '<div class="info-item"><div class="k">參考連結</div><div class="v"><a class="task-link" href="' + escapeHtml(t.link) + '" target="_blank" rel="noopener">🔗 開啟連結</a></div></div>' : '') +
           '</div>' +
           (supportDepts.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協力部門</div><div class="collab-chips">' + supportDepts.map(function (d) { return '<span class="collab-chip">' + escapeHtml(d) + '</span>'; }).join('') + '</div></div>' : '') +
           (collabs.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協辦人員</div><div class="collab-chips">' + collabs.map(function (c) { return '<span class="collab-chip">' + escapeHtml(c) + '</span>'; }).join('') + '</div></div>' : '') +
           (t.notes ? '<div class="info-item" style="margin-bottom:14px;"><div class="k">說明</div><div class="v" style="font-weight:500;">' + escapeHtml(t.notes) + '</div></div>' : '') +
+
+          (children.length ? (
+            '<hr class="divider">' +
+            '<label class="field-label" style="margin-top:0;">子任務（' + children.filter(function (c) { return c.status === '已完成'; }).length + '/' + children.length + ' 完成）</label>' +
+            '<div class="subtask-list">' + children.map(function (c) {
+              var cm = STATUS_META[c.status] || STATUS_META['待處理'];
+              return '<div class="subtask-item" onclick="openTaskDetail(\'' + c.id + '\')"><span class="subtask-title">' + escapeHtml(c.title) + '</span><span class="status-pill" style="color:' + cm.fg + '; background:' + cm.bg + ';">' + escapeHtml(c.status) + '</span></div>';
+            }).join('') + '</div>'
+          ) : '') +
 
           '<hr class="divider">' +
           '<label class="field-label" style="margin-top:0;">提醒事項（開會、繳交資料等重要日期）</label>' +
