@@ -887,10 +887,26 @@
   }
 
   function advanceStatus(id, nextStatus) {
+    var t = taskById_(id);
+    if (!t || t.status === nextStatus) return;
+    var prevStatus = t.status;
+    t.status = nextStatus;
+    renderKanban();
+    renderTasks();
+    renderDeptOverview();
+    renderStats();
     apiPost({ action: 'addUpdate', taskId: id, author: state.userName || '未署名', text: '', newStatus: nextStatus }).then(function (res) {
-      if (!res.ok) return showToast('更新失敗：' + res.error);
+      if (!res.ok) {
+        t.status = prevStatus;
+        renderKanban(); renderTasks(); renderDeptOverview(); renderStats();
+        return showToast('更新失敗：' + res.error);
+      }
       showToast('已更新為「' + nextStatus + '」');
       refreshTasks();
+    }).catch(function () {
+      t.status = prevStatus;
+      renderKanban(); renderTasks(); renderDeptOverview(); renderStats();
+      showToast('連線失敗，請稍後再試');
     });
   }
 
