@@ -650,6 +650,8 @@
       renderWorkload();
       if (state.view === 'calendar') renderCalendar();
       if (state.view === 'gantt') renderGantt();
+      if (state.view === 'kanban') renderKanban();
+      if (state.view === 'feed') renderFeed();
     }).catch(function () { showToast('連線失敗，請檢查網路'); });
   }
 
