@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>任務中控台</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="任務中控台">
+<meta name="theme-color" content="#5E5CE6">
 <style>
   :root {
     --bg: #F2F2F5;
@@ -277,6 +284,38 @@
   .milestone-add-row { display: flex; gap: 6px; margin-top: 4px; }
   .milestone-add-row input[type=date] { flex: 0 0 132px; }
   .milestone-add-row input[type=text] { flex: 1; }
+
+  .priority-flag { font-size: 12.5px; font-weight: 700; }
+  .priority-flag.高 { color: var(--danger); }
+  .priority-flag.中 { color: var(--status-waiting); }
+  .priority-flag.低 { color: var(--text-tertiary); }
+
+  .archived-tag { font-size: 12px; font-weight: 700; color: var(--text-tertiary); background: var(--surface-2); padding: 3px 9px; border-radius: 7px; }
+  .task-card.is-archived { opacity: 0.6; }
+
+  .task-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-size: 14.5px; font-weight: 600; text-decoration: none; word-break: break-all; }
+
+  .member-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .member-row:last-child { border-bottom: none; }
+  .member-name { font-weight: 600; font-size: 14.5px; flex: 0 0 auto; min-width: 64px; }
+  .member-email { font-size: 13.5px; color: var(--text-secondary); flex: 1; word-break: break-all; }
+  .member-add-row { display: flex; gap: 6px; margin-top: 10px; }
+  .member-add-row input { flex: 1; }
+
+  .cal-header { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 10px; }
+  .cal-title { font-size: 17px; font-weight: 700; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { text-align: center; font-size: 12px; font-weight: 700; color: var(--text-tertiary); padding: 4px 0; }
+  .cal-cell {
+    aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border);
+    padding: 5px; display: flex; flex-direction: column; cursor: pointer; overflow: hidden;
+  }
+  .cal-cell.other-month { opacity: 0.35; }
+  .cal-cell.is-today { border-color: var(--accent); border-width: 2px; }
+  .cal-cell-num { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+  .cal-dots { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; }
+  .cal-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .cal-more { font-size: 10px; color: var(--text-tertiary); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -321,6 +360,13 @@
           <span class="slider"></span>
         </label>
       </div>
+      <div class="toggle-row">
+        <span class="toggle-label">顯示已封存的任務</span>
+        <label class="switch">
+          <input type="checkbox" id="showArchivedToggle" onchange="renderTasks()">
+          <span class="slider"></span>
+        </label>
+      </div>
 
       <div class="segmented" id="statusFilter"></div>
       <div class="chip-row" id="deptFilter"></div>
@@ -330,6 +376,15 @@
 
     <div id="deptOverview" hidden>
       <div class="dept-grid" id="deptGrid"></div>
+    </div>
+
+    <div id="calendarView" hidden>
+      <div class="cal-header">
+        <button class="icon-btn" onclick="shiftCalMonth(-1)">‹</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button class="icon-btn" onclick="shiftCalMonth(1)">›</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
     </div>
   </div>
 
@@ -354,9 +409,12 @@
     apiUrl: '',
     userName: '',
     tasks: [],
+    members: [],
     statusFilter: '全部',
     deptFilter: '全部',
     view: 'list',
+    calYear: new Date().getFullYear(),
+    calMonth: new Date().getMonth(),
     loading: false,
     pollTimer: null
   };
@@ -404,6 +462,7 @@
     ensureUserName();
     buildStatusFilter();
     buildViewSwitch();
+    loadMembers();
     refreshTasks();
     state.pollTimer = setInterval(function () { refreshTasks(false); }, 20000);
     document.addEventListener('visibilitychange', function () {
@@ -449,7 +508,7 @@
 
   function buildViewSwitch() {
     var wrap = document.getElementById('viewSwitch');
-    var opts = [['list', '任務清單'], ['overview', '部門總覽']];
+    var opts = [['list', '任務清單'], ['overview', '部門總覽'], ['calendar', '時間軸']];
     wrap.innerHTML = opts.map(function (o) {
       return '<button class="' + (state.view === o[0] ? 'active' : '') + '" onclick="setView(\'' + o[0] + '\')">' + o[1] + '</button>';
     }).join('');
@@ -459,6 +518,18 @@
     buildViewSwitch();
     document.getElementById('listView').hidden = v !== 'list';
     document.getElementById('deptOverview').hidden = v !== 'overview';
+    document.getElementById('calendarView').hidden = v !== 'calendar';
+    if (v === 'calendar') renderCalendar();
+  }
+
+  // ---------- Members directory ----------
+  function loadMembers() {
+    apiGet('members').then(function (res) {
+      if (res.ok) state.members = res.members || [];
+    });
+  }
+  function memberNames_() {
+    return state.members.map(function (m) { return m.name; });
   }
 
   // ---------- Due date helpers ----------
@@ -498,11 +569,16 @@
     }).catch(function () { showToast('連線失敗，請檢查網路'); });
   }
 
+  function activeTasks_() {
+    return state.tasks.filter(function (t) { return !t.archived; });
+  }
+
   function renderStats() {
-    var total = state.tasks.length;
-    var inProgress = state.tasks.filter(function (t) { return t.status === '進行中'; }).length;
-    var overdue = state.tasks.filter(function (t) { return dueInfo(t.dueDate).cls === 'overdue' && t.status !== '已完成'; }).length;
-    var soon = state.tasks.filter(function (t) { return dueInfo(t.dueDate).cls === 'soon' && t.status !== '已完成'; }).length;
+    var pool = activeTasks_();
+    var total = pool.length;
+    var inProgress = pool.filter(function (t) { return t.status === '進行中'; }).length;
+    var overdue = pool.filter(function (t) { return dueInfo(t.dueDate).cls === 'overdue' && t.status !== '已完成'; }).length;
+    var soon = pool.filter(function (t) { return dueInfo(t.dueDate).cls === 'soon' && t.status !== '已完成'; }).length;
     var tiles = [
       { n: total, l: '總任務' },
       { n: inProgress, l: '進行中' },
@@ -515,6 +591,8 @@
   }
 
   function taskUrgencySort_(a, b) {
+    var archA = a.archived ? 1 : 0, archB = b.archived ? 1 : 0;
+    if (archA !== archB) return archA - archB;
     var doneA = a.status === '已完成' ? 1 : 0, doneB = b.status === '已完成' ? 1 : 0;
     if (doneA !== doneB) return doneA - doneB;
     var da = a.dueDate || '9999-99-99', db_ = b.dueDate || '9999-99-99';
@@ -524,7 +602,7 @@
   // ---------- Reminders ----------
   function renderReminders() {
     var items = [];
-    state.tasks.forEach(function (t) {
+    activeTasks_().forEach(function (t) {
       if (t.status === '已完成') return;
       var di = dueInfo(t.dueDate);
       if (di.cls) {
@@ -558,7 +636,7 @@
   // ---------- Department overview ----------
   function renderDeptOverview() {
     var groups = {};
-    state.tasks.forEach(function (t) {
+    activeTasks_().forEach(function (t) {
       var key = t.department || '未分類';
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
@@ -593,6 +671,87 @@
     }).join('');
   }
 
+  // ---------- Calendar / timeline view ----------
+  function shiftCalMonth(delta) {
+    state.calMonth += delta;
+    if (state.calMonth < 0) { state.calMonth = 11; state.calYear--; }
+    if (state.calMonth > 11) { state.calMonth = 0; state.calYear++; }
+    renderCalendar();
+  }
+
+  function dayItemsMap_() {
+    var map = {};
+    activeTasks_().forEach(function (t) {
+      if (t.dueDate) {
+        (map[t.dueDate] = map[t.dueDate] || []).push({ title: t.title, taskId: t.id, color: (STATUS_META[t.status] || STATUS_META['待處理']).fg, sub: t.status });
+      }
+      (t.milestones || []).forEach(function (m) {
+        if (!m.date) return;
+        (map[m.date] = map[m.date] || []).push({ title: m.label || '提醒事項', taskId: t.id, color: 'var(--accent)', sub: t.title });
+      });
+    });
+    return map;
+  }
+
+  function renderCalendar() {
+    var y = state.calYear, m = state.calMonth;
+    document.getElementById('calTitle').textContent = y + ' 年 ' + (m + 1) + ' 月';
+    var firstOfMonth = new Date(y, m, 1);
+    var startOffset = firstOfMonth.getDay();
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var daysInPrevMonth = new Date(y, m, 0).getDate();
+    var todayStr = todayStr_();
+    var items = dayItemsMap_();
+
+    var cells = [];
+    for (var i = 0; i < startOffset; i++) {
+      cells.push({ label: daysInPrevMonth - startOffset + i + 1, other: true, dateStr: null });
+    }
+    for (var d = 1; d <= daysInMonth; d++) {
+      var dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      cells.push({ label: d, other: false, dateStr: dateStr });
+    }
+    while (cells.length % 7 !== 0) {
+      cells.push({ label: cells.length, other: true, dateStr: null });
+    }
+
+    var dow = ['日', '一', '二', '三', '四', '五', '六'].map(function (d) { return '<div class="cal-dow">' + d + '</div>'; }).join('');
+    var cellsHtml = cells.map(function (c) {
+      var dayItems = c.dateStr ? (items[c.dateStr] || []) : [];
+      var dots = dayItems.slice(0, 4).map(function (it) { return '<span class="cal-dot" style="background:' + it.color + ';"></span>'; }).join('');
+      var more = dayItems.length > 4 ? '<div class="cal-more">+' + (dayItems.length - 4) + '</div>' : '';
+      return '' +
+        '<div class="cal-cell ' + (c.other ? 'other-month' : '') + ' ' + (c.dateStr === todayStr ? 'is-today' : '') + '" ' +
+          (c.dateStr ? 'onclick="openCalDay(\'' + c.dateStr + '\')"' : '') + '>' +
+          '<div class="cal-cell-num">' + c.label + '</div>' +
+          (dots ? '<div class="cal-dots">' + dots + '</div>' : '') +
+          more +
+        '</div>';
+    }).join('');
+
+    document.getElementById('calGrid').innerHTML = dow + cellsHtml;
+  }
+
+  function openCalDay(dateStr) {
+    var items = (dayItemsMap_()[dateStr] || []);
+    if (items.length === 0) return;
+    var listHtml = items.map(function (it) {
+      return '<div class="log-entry" style="cursor:pointer;" onclick="closeModal(); openTaskDetail(\'' + it.taskId + '\')">' +
+        '<span class="cal-dot" style="background:' + it.color + '; margin-top:6px;"></span>' +
+        '<div class="log-body"><div class="log-author">' + escapeHtml(it.title) + '</div><div class="log-text" style="margin-top:2px; color:var(--text-secondary);">' + escapeHtml(it.sub) + '</div></div>' +
+      '</div>';
+    }).join('');
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header"><div class="sheet-title">' + escapeHtml(dateStr) + '</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
+          '<div class="log-list">' + listHtml + '</div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
+  }
+
   function jumpToDept(name) {
     state.deptFilter = name;
     setView('list');
@@ -600,9 +759,13 @@
     renderTasks();
   }
 
+  var PRIORITY_FLAG = { '高': '🔺 高', '中': '● 中', '低': '▽ 低' };
+
   function renderTasks() {
     var onlyMine = document.getElementById('onlyMineToggle').checked;
+    var showArchived = document.getElementById('showArchivedToggle').checked;
     var list = state.tasks.filter(function (t) {
+      if (!showArchived && t.archived) return false;
       if (state.statusFilter !== '全部' && t.status !== state.statusFilter) return false;
       if (state.deptFilter !== '全部' && t.department !== state.deptFilter) return false;
       if (onlyMine) {
@@ -623,8 +786,9 @@
       var di = dueInfo(t.dueDate);
       var collabs = (t.collaborators || []);
       var avatars = [t.assignee].concat(collabs).filter(Boolean).slice(0, 4);
+      var priorityFlag = PRIORITY_FLAG[t.priority] || '';
       return '' +
-        '<div class="task-card" onclick="openTaskDetail(\'' + t.id + '\')">' +
+        '<div class="task-card ' + (t.archived ? 'is-archived' : '') + '" onclick="openTaskDetail(\'' + t.id + '\')">' +
           '<div class="task-top">' +
             '<div class="task-title">' + escapeHtml(t.title) + '</div>' +
             '<span class="status-pill" style="color:' + meta.fg + '; background:' + meta.bg + ';">' + escapeHtml(t.status) + '</span>' +
@@ -634,6 +798,8 @@
             (t.brand ? '<span class="meta-tag">' + escapeHtml(t.brand) + '</span>' : '') +
             '<span>👤 ' + escapeHtml(t.assignee || '未指派') + '</span>' +
             '<span class="due-badge ' + di.cls + '">' + di.label + '</span>' +
+            (priorityFlag ? '<span class="priority-flag ' + t.priority + '">' + priorityFlag + '</span>' : '') +
+            (t.archived ? '<span class="archived-tag">已封存</span>' : '') +
           '</div>' +
           (avatars.length ? '<div class="avatars">' + avatars.map(function (a) { return '<span class="avatar" title="' + escapeHtml(a) + '">' + initials(a) + '</span>'; }).join('') + '</div>' : '') +
         '</div>';
@@ -644,6 +810,16 @@
   function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
 
   function openSettings() {
+    renderSettingsModal();
+    apiGet('members').then(function (res) {
+      if (res.ok) { state.members = res.members || []; renderSettingsModal(); }
+    });
+  }
+  function renderSettingsModal() {
+    var memberRows = state.members.map(function (m) {
+      return '<div class="member-row"><span class="member-name">' + escapeHtml(m.name) + '</span><span class="member-email">' + escapeHtml(m.email) + '</span><button class="icon-btn" onclick="deleteMemberRow(\'' + escapeHtml(m.name).replace(/'/g, "\\'") + '\')" title="移除">✕</button></div>';
+    }).join('') || '<div style="color:var(--text-tertiary); font-size:13.5px; padding:6px 0;">還沒有成員，加入後才能收到 Email 通知</div>';
+
     var html = '' +
       '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
         '<div class="modal-sheet">' +
@@ -655,6 +831,15 @@
           '<input type="text" id="settingsUrl" value="' + escapeHtml(state.apiUrl) + '">' +
           '<div style="margin-top:18px; display:flex; gap:10px;">' +
             '<button class="primary-btn" style="flex:1; justify-content:center;" onclick="saveSettings()">儲存</button>' +
+          '</div>' +
+
+          '<hr class="divider">' +
+          '<label class="field-label" style="margin-top:0;">團隊成員（Email，用於指派/更新通知）</label>' +
+          '<div id="memberList">' + memberRows + '</div>' +
+          '<div class="member-add-row">' +
+            '<input type="text" id="memberNameInput" placeholder="姓名（跟指派/協辦欄一致）">' +
+            '<input type="text" id="memberEmailInput" placeholder="Gmail 信箱">' +
+            '<button class="secondary-btn" onclick="submitMember()">加入</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -668,33 +853,78 @@
     closeModal();
     showToast('已儲存');
   }
+  function submitMember() {
+    var name = document.getElementById('memberNameInput').value.trim();
+    var email = document.getElementById('memberEmailInput').value.trim();
+    if (!name || !email) return showToast('請填寫姓名跟信箱');
+    apiPost({ action: 'addMember', name: name, email: email }).then(function (res) {
+      if (!res.ok) return showToast('新增失敗：' + res.error);
+      state.members = res.members || [];
+      showToast('已加入成員');
+      renderSettingsModal();
+    });
+  }
+  function deleteMemberRow(name) {
+    apiPost({ action: 'deleteMember', name: name }).then(function (res) {
+      if (!res.ok) return showToast('移除失敗：' + res.error);
+      state.members = res.members || [];
+      renderSettingsModal();
+    });
+  }
+
+  function taskFormFieldsHtml_(t) {
+    t = t || {};
+    var depts = Array.from(new Set(state.tasks.map(function (x) { return x.department; }).filter(Boolean)));
+    var brands = Array.from(new Set(state.tasks.map(function (x) { return x.brand; }).filter(Boolean)));
+    var assignees = Array.from(new Set(memberNames_().concat(state.tasks.map(function (x) { return x.assignee; })).filter(Boolean)));
+    var priorityOptions = ['高', '中', '低'].map(function (p) {
+      return '<option value="' + p + '"' + ((t.priority || '中') === p ? ' selected' : '') + '>' + p + '</option>';
+    }).join('');
+    return '' +
+      '<label class="field-label">任務標題</label>' +
+      '<input type="text" id="tfTitle" placeholder="例如：9 月新品 IG 貼文素材" value="' + escapeHtml(t.title || '') + '">' +
+      '<label class="field-label">部門</label>' +
+      '<input type="text" id="tfDept" list="deptList" placeholder="例如：行銷 / 直營門市 / 電商" value="' + escapeHtml(t.department || '') + '">' +
+      '<datalist id="deptList">' + depts.map(function (d) { return '<option value="' + escapeHtml(d) + '">'; }).join('') + '</datalist>' +
+      '<label class="field-label">品牌／系列</label>' +
+      '<input type="text" id="tfBrand" list="brandList" placeholder="選填" value="' + escapeHtml(t.brand || '') + '">' +
+      '<datalist id="brandList">' + brands.map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join('') + '</datalist>' +
+      '<label class="field-label">負責人</label>' +
+      '<input type="text" id="tfAssignee" list="assigneeList" placeholder="這項任務由誰負責" value="' + escapeHtml(t.assignee || '') + '">' +
+      '<datalist id="assigneeList">' + assignees.map(function (a) { return '<option value="' + escapeHtml(a) + '">'; }).join('') + '</datalist>' +
+      '<label class="field-label">協辦人員</label>' +
+      '<input type="text" id="tfCollab" placeholder="以逗號分隔，例如：小美, 小華" value="' + escapeHtml((t.collaborators || []).join(', ')) + '">' +
+      '<label class="field-label">優先級</label>' +
+      '<select id="tfPriority">' + priorityOptions + '</select>' +
+      '<label class="field-label">截止日期</label>' +
+      '<input type="date" id="tfDue" value="' + escapeHtml(t.dueDate || '') + '">' +
+      '<label class="field-label">參考連結（選填）</label>' +
+      '<input type="text" id="tfLink" placeholder="Google Drive／商品照片連結等" value="' + escapeHtml(t.link || '') + '">' +
+      '<label class="field-label">說明（選填）</label>' +
+      '<textarea id="tfNotes" placeholder="工作內容細節、注意事項…">' + escapeHtml(t.notes || '') + '</textarea>';
+  }
+
+  function readTaskForm_() {
+    return {
+      title: document.getElementById('tfTitle').value.trim(),
+      department: document.getElementById('tfDept').value.trim(),
+      brand: document.getElementById('tfBrand').value.trim(),
+      assignee: document.getElementById('tfAssignee').value.trim(),
+      collaborators: document.getElementById('tfCollab').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+      priority: document.getElementById('tfPriority').value,
+      dueDate: document.getElementById('tfDue').value,
+      link: document.getElementById('tfLink').value.trim(),
+      notes: document.getElementById('tfNotes').value.trim()
+    };
+  }
 
   function openNewTask() {
-    var depts = Array.from(new Set(state.tasks.map(function (t) { return t.department; }).filter(Boolean)));
-    var brands = Array.from(new Set(state.tasks.map(function (t) { return t.brand; }).filter(Boolean)));
-    var assignees = Array.from(new Set(state.tasks.map(function (t) { return t.assignee; }).filter(Boolean)));
     var html = '' +
       '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
         '<div class="modal-sheet">' +
           '<div class="sheet-handle"></div>' +
           '<div class="sheet-header"><div class="sheet-title">新增任務</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
-          '<label class="field-label">任務標題</label>' +
-          '<input type="text" id="ntTitle" placeholder="例如：9 月新品 IG 貼文素材">' +
-          '<label class="field-label">部門</label>' +
-          '<input type="text" id="ntDept" list="deptList" placeholder="例如：行銷 / 直營門市 / 電商">' +
-          '<datalist id="deptList">' + depts.map(function (d) { return '<option value="' + escapeHtml(d) + '">'; }).join('') + '</datalist>' +
-          '<label class="field-label">品牌／系列</label>' +
-          '<input type="text" id="ntBrand" list="brandList" placeholder="選填">' +
-          '<datalist id="brandList">' + brands.map(function (b) { return '<option value="' + escapeHtml(b) + '">'; }).join('') + '</datalist>' +
-          '<label class="field-label">負責人</label>' +
-          '<input type="text" id="ntAssignee" list="assigneeList" placeholder="這項任務由誰負責">' +
-          '<datalist id="assigneeList">' + assignees.map(function (a) { return '<option value="' + escapeHtml(a) + '">'; }).join('') + '</datalist>' +
-          '<label class="field-label">協辦人員</label>' +
-          '<input type="text" id="ntCollab" placeholder="以逗號分隔，例如：小美, 小華">' +
-          '<label class="field-label">截止日期</label>' +
-          '<input type="date" id="ntDue">' +
-          '<label class="field-label">說明（選填）</label>' +
-          '<textarea id="ntNotes" placeholder="工作內容細節、注意事項…"></textarea>' +
+          taskFormFieldsHtml_({}) +
           '<div style="margin-top:18px;"><button class="primary-btn" style="width:100%; justify-content:center;" onclick="submitNewTask()">建立任務</button></div>' +
         '</div>' +
       '</div>';
@@ -702,24 +932,49 @@
   }
 
   function submitNewTask() {
-    var title = document.getElementById('ntTitle').value.trim();
-    if (!title) return showToast('請輸入任務標題');
-    var payload = {
-      action: 'createTask',
-      title: title,
-      department: document.getElementById('ntDept').value.trim(),
-      brand: document.getElementById('ntBrand').value.trim(),
-      assignee: document.getElementById('ntAssignee').value.trim(),
-      collaborators: document.getElementById('ntCollab').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
-      dueDate: document.getElementById('ntDue').value,
-      notes: document.getElementById('ntNotes').value.trim(),
-      status: '待處理',
-      createdBy: state.userName
-    };
+    var form = readTaskForm_();
+    if (!form.title) return showToast('請輸入任務標題');
+    var payload = Object.assign({ action: 'createTask', status: '待處理', createdBy: state.userName }, form);
     apiPost(payload).then(function (res) {
       if (!res.ok) return showToast('建立失敗：' + res.error);
       closeModal();
       showToast('已建立任務');
+      refreshTasks();
+    });
+  }
+
+  function openEditTask(id) {
+    var t = state.tasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var html = '' +
+      '<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">' +
+        '<div class="modal-sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-header"><div class="sheet-title">編輯任務</div><button class="icon-btn" onclick="closeModal()">✕</button></div>' +
+          taskFormFieldsHtml_(t) +
+          '<div style="margin-top:18px;"><button class="primary-btn" style="width:100%; justify-content:center;" onclick="submitEditTask(\'' + id + '\')">儲存變更</button></div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('modalRoot').innerHTML = html;
+  }
+
+  function submitEditTask(id) {
+    var form = readTaskForm_();
+    if (!form.title) return showToast('請輸入任務標題');
+    var payload = Object.assign({ action: 'updateTask', id: id }, form);
+    apiPost(payload).then(function (res) {
+      if (!res.ok) return showToast('儲存失敗：' + res.error);
+      showToast('已儲存變更');
+      refreshTasks();
+      openTaskDetail(id);
+    });
+  }
+
+  function toggleArchive(id, archived) {
+    apiPost({ action: 'updateTask', id: id, archived: archived }).then(function (res) {
+      if (!res.ok) return showToast('操作失敗：' + res.error);
+      showToast(archived ? '已封存任務' : '已取消封存');
+      closeModal();
       refreshTasks();
     });
   }
@@ -763,8 +1018,11 @@
         '<div class="modal-sheet">' +
           '<div class="sheet-handle"></div>' +
           '<div class="sheet-header">' +
-            '<div class="sheet-title">' + escapeHtml(t.title) + '</div>' +
-            '<button class="icon-btn" onclick="closeModal()">✕</button>' +
+            '<div class="sheet-title">' + escapeHtml(t.title) + (t.archived ? ' <span class="archived-tag">已封存</span>' : '') + '</div>' +
+            '<div style="display:flex; gap:6px;">' +
+              '<button class="icon-btn" onclick="openEditTask(\'' + t.id + '\')" title="編輯">✎</button>' +
+              '<button class="icon-btn" onclick="closeModal()">✕</button>' +
+            '</div>' +
           '</div>' +
 
           '<div class="status-select-wrap">' +
@@ -776,6 +1034,8 @@
             '<div class="info-item"><div class="k">品牌／系列</div><div class="v">' + escapeHtml(t.brand || '—') + '</div></div>' +
             '<div class="info-item"><div class="k">負責人</div><div class="v">' + escapeHtml(t.assignee || '未指派') + '</div></div>' +
             '<div class="info-item"><div class="k">截止日期</div><div class="v ' + (di.cls === 'overdue' ? 'due-badge overdue' : '') + '">' + escapeHtml(t.dueDate || '未設定') + (di.cls ? '（' + di.label + '）' : '') + '</div></div>' +
+            '<div class="info-item"><div class="k">優先級</div><div class="v priority-flag ' + (t.priority || '中') + '">' + (PRIORITY_FLAG[t.priority] || PRIORITY_FLAG['中']) + '</div></div>' +
+            (t.link ? '<div class="info-item"><div class="k">參考連結</div><div class="v"><a class="task-link" href="' + escapeHtml(t.link) + '" target="_blank" rel="noopener">🔗 開啟連結</a></div></div>' : '') +
           '</div>' +
           (collabs.length ? '<div class="info-item" style="margin:-4px 0 14px;"><div class="k">協辦人員</div><div class="collab-chips">' + collabs.map(function (c) { return '<span class="collab-chip">' + escapeHtml(c) + '</span>'; }).join('') + '</div></div>' : '') +
           (t.notes ? '<div class="info-item" style="margin-bottom:14px;"><div class="k">說明</div><div class="v" style="font-weight:500;">' + escapeHtml(t.notes) + '</div></div>' : '') +
@@ -798,7 +1058,10 @@
             '<button class="primary-btn" onclick="submitUpdate(\'' + t.id + '\')">送出</button>' +
           '</div>' +
 
-          '<div style="text-align:center; margin-top:18px;"><button class="danger-text-btn" onclick="removeTask(\'' + t.id + '\')">刪除此任務</button></div>' +
+          '<div style="display:flex; justify-content:center; gap:18px; margin-top:18px;">' +
+            '<button class="text-btn" onclick="toggleArchive(\'' + t.id + '\', ' + (!t.archived) + ')">' + (t.archived ? '取消封存' : '封存此任務') + '</button>' +
+            '<button class="danger-text-btn" onclick="removeTask(\'' + t.id + '\')">刪除此任務</button>' +
+          '</div>' +
         '</div>' +
       '</div>';
     document.getElementById('modalRoot').innerHTML = html;
